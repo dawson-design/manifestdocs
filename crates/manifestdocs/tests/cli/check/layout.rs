@@ -102,7 +102,7 @@ fn fails_when_no_tree_is_found() {
 
     assert_eq!(
         run.stderr,
-        "error: no manifestdocs.yaml in this folder or any folder above it, up to the repo root\n"
+        "error: no manifestdocs.yaml in this folder or any folder above it, up to the repo root, and no .manifestdocs/config.yaml at or above it\n"
     );
     assert_eq!(run.stdout, "");
     assert_eq!(run.code, 2);

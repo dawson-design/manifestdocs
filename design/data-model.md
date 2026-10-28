@@ -24,8 +24,8 @@ struct GitHubConfig { host: Host, docs_repo: RepoRef }
 enum MergeMode { Review, Proposed }
 struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
-// ~/.config/manifestdocs/config.yaml
-struct Workspace { path: AbsPath, tree: AbsPath }
+// .manifestdocs/config.yaml
+struct Pointer { tree: RelPath }     // relative to the pointer's folder; may climb with `..`
 
 struct NodeId(String);               // "fd-" + exactly 6 lowercase hex
 struct NodeIdPrefix(String);         // CLI input only: "fd-" + 4 to 6 hex, with `show`
@@ -89,7 +89,7 @@ Two rules are part of the types. A superseded node can't exist without a replace
 
 ## Where the I/O happens
 
-1. **Reading:** locate the root by walking up to `manifestdocs.yaml`, stopping at the repo root. Parse the config, list the repo's files with `ignore`, and read every Markdown file under the tree.
+1. **Reading:** locate the root by walking up to `manifestdocs.yaml`, stopping at the repo root, then through the nearest pointer at or above the current folder. Parse the config, list the repo's files with `ignore`, and read every Markdown file under the tree.
 2. **Checking:** pure functions turn the `Snapshot` into findings. They sort the paths into node files, supporting docs, records and nested trees, parse each node, index the IDs, and check references, links and anchors. Anchors in Markdown outside the tree need one more read: the core names those files, and the I/O side adds them to the `Snapshot`. Tests build a `Snapshot` in memory, with no disk.
 3. **Reporting:** render the findings and set the exit code.
 
@@ -122,7 +122,7 @@ The types can't express these, so `check` does.
 - A folder named `decisions` under a node is its records folder, never a node.
 - `NoRootNode` is reported on `manifestdocs.yaml` and names the expected root node file. `NestedTreeSkipped` is reported on the nested tree's folder.
 - Anchors must match a heading's GitHub slug exactly. Supersession cycles aren't detected.
-- When workspace paths in the user config overlap, the longest match wins. The user config is read only when walking up finds no tree, its paths are absolute or start with `~/`, and an unknown key is an error.
+- A pointer is read only when walking up finds no tree, and the nearest one wins. Its `tree` is required, isn't absolute and doesn't start with `~`, and must lead to a folder with `manifestdocs.yaml`. An unknown key is an error. A `.manifestdocs/` folder without `config.yaml` is skipped.
 - `tree` and `show` count a node file whose `id` parses as a node, as `check` does. When its frontmatter has errors, `tree` marks it `has problems`, and `show` prints the errors and exits 1, so one bad edit doesn't hide part of the tree.
 - A command-line argument that starts with `fd-` is an ID or ID prefix. A folder with that name is written `./fd-x`.
 - A node's supporting docs are files of any type. `manifestdocs.yaml` and decision records aren't supporting docs.

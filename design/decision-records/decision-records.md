@@ -72,7 +72,9 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 | What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `merge: review` the team reviews the PR; with `merge: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
 | Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted` | The same, after the run |
 
-When the tool creates `.manifestdocs/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo. `--out <dir>` overrides the folder.
+When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/tree-format.md#pointer) beside it can be. `--out <dir>` overrides the folder.
+
+When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR, apart from the code.
 
 The personal factory can use `merge: proposed` for speed. A team whose changes need review before they take effect uses `merge: review`.
 

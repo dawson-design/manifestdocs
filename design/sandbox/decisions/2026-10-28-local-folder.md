@@ -2,7 +2,7 @@
 id: dc-e64c696
 node: fd-630023
 title: "The tool's local folder is .manifestdocs"
-status: accepted
+status: superseded
 topic: local-folder
 decided_by: alastair
 date: 2026-10-28
