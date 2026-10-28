@@ -18,34 +18,34 @@ summary: "Assembles a node's or an issue's context for a coding agent within an 
 Agent format for an issue:
 
 ```markdown
-# Context: example-org/eeb-docs#112 (docs origin/main @ 3f9a1c2, 2026-10-27)
+# Context: example-org/cookbook-docs#112 (docs origin/main @ 3f9a1c2, 2026-10-27)
 
 ## Issue
-Add a configurable dedup window per topic. Acceptance criteria: ...
+Let readers filter search results by cooking time. Acceptance criteria: ...
 
 ## Parent work
-- #41 Universal De-Duplicator (open)
-  - #58 Window configuration (open, 3 of 5 done)
+- #41 Recipe search (open)
+  - #58 Search filters (open, 3 of 5 done)
 
-## Feature: Universal De-Duplicator (fd-7c2e41, approved)
-Path: platform/dedup
+## Feature: Recipe search (fd-7c2e41, approved)
+Path: recipes/search
 <full node body>
 
-## Project: Event Bus (fd-3e9d0a, approved)
+## Project: Cookbook (fd-3e9d0a, approved)
 <full root node body>
 
 ## Decisions
-- dc-3f1a8c2 (accepted): Default dedup window is ten minutes. Producers retry for up to eight.
-- dc-8b07e15 (proposed): Window is set per topic, not per producer.
+- dc-3f1a8c2 (accepted): Search results show 20 recipes per page. Readers rarely scroll past 20 before refining a search.
+- dc-8b07e15 (proposed): Filters apply as the reader picks them, not on submit.
 
 ## Linked docs
-### adr/2026-09-dedup-window.md
+### adr/2026-09-search-engine.md
 <full doc>
 
 ## Around this feature
-- Parent: Platform services: <summary>
-- Child: Key strategies (fd-91ab5d, draft): <summary>
+- Parent: Recipes: <summary>
+- Child: Ranking (fd-91ab5d, draft): <summary>
 
-Omitted for budget: platform/dedup/dedup-keys.md (2,400 tokens)
+Omitted for budget: recipes/search/ranking-rules.md (2,400 tokens)
 Estimated size: 7,100 of 8,000 tokens
 ```

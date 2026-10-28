@@ -13,10 +13,10 @@ A `manifestdocs.yaml` file marks the root of a tree. It can go in any folder of 
 
 ```yaml
 # manifestdocs.yaml
-name: event-bus
+name: cookbook
 github:
   host: github.com
-  docs_repo: example-org/eeb-docs
+  docs_repo: example-org/cookbook-docs
 decisions:
   merge: review          # review | proposed
 statuses: [draft, approved]
@@ -31,8 +31,8 @@ Engineers usually work in a code repo cloned next to the docs repo, and walking 
 ```yaml
 # ~/.config/manifestdocs/config.yaml
 workspaces:
-  - path: ~/work/eeb             # sessions anywhere under this folder
-    tree: ~/work/eeb/eeb-docs    # the folder with manifestdocs.yaml
+  - path: ~/work/cookbook                  # sessions anywhere under this folder
+    tree: ~/work/cookbook/cookbook-docs    # the folder with manifestdocs.yaml
 ```
 
 When workspace paths overlap, the longest match wins.
@@ -43,28 +43,28 @@ Inside the docs clone, the tool reads the working tree, so authors see their edi
 
 ## Nodes
 
-A folder under the root is a feature node when it contains a Markdown file named after the folder, such as `recipes/recipes.md`, with an `id` in its frontmatter. Because each node file has its own name, editor tabs and search results show which feature a file belongs to. The root node is named after the tree's `name` in `manifestdocs.yaml`, such as `event-bus.md`, because a clone's folder name isn't fixed. The root node is optional: without one, top-level nodes have no parent, `context` leaves out the project section, and `check` warns. A node's parent is the nearest ancestor folder that is a node. Folders in between are passed through, so a tree can follow a repo's existing folder layout. Node folder names default to kebab case, such as `key-strategies/`, so relative links need no escaped spaces. `init` and the `manifestdocs-author` skill create folders and node files that way, and `check` accepts existing names. When a folder is renamed without its node file, `check` reports the mismatch, because the node would otherwise drop out of the tree. A `decisions/` subfolder contains the node's [decision records](../decision-records/decision-records.md), so a folder named `decisions` is never a node.
+A folder under the root is a feature node when it contains a Markdown file named after the folder, such as `recipes/recipes.md`, with an `id` in its frontmatter. Because each node file has its own name, editor tabs and search results show which feature a file belongs to. The root node is named after the tree's `name` in `manifestdocs.yaml`, such as `cookbook.md`, because a clone's folder name isn't fixed. The root node is optional: without one, top-level nodes have no parent, `context` leaves out the project section, and `check` warns. A node's parent is the nearest ancestor folder that is a node. Folders in between are passed through, so a tree can follow a repo's existing folder layout. Node folder names default to kebab case, such as `key-strategies/`, so relative links need no escaped spaces. `init` and the `manifestdocs-author` skill create folders and node files that way, and `check` accepts existing names. When a folder is renamed without its node file, `check` reports the mismatch, because the node would otherwise drop out of the tree. A `decisions/` subfolder contains the node's [decision records](../decision-records/decision-records.md), so a folder named `decisions` is never a node.
 
 ## Ownership
 
 A node owns every file under its folder, except files under a deeper node's folder or a nested tree. Those files are its supporting docs: `show` lists them, and `stale` watches them. `context` loads only the ones the node links to (see [agent context](../context/context.md)).
 
-For example, `platform/dedup/dedup.md`:
+For example, `recipes/search/search.md`:
 
 ```markdown
 ---
 id: fd-7c2e41
-title: "Universal De-Duplicator"
+title: "Recipe search"
 status: approved
-summary: "Drops repeat events across producers using a shared key and a time window."
-repos: [example-org/eeb-dedup]
-work: [example-org/eeb-docs#41]
+summary: "Finds recipes by ingredient, cuisine and cooking time."
+repos: [example-org/cookbook-web]
+work: [example-org/cookbook-docs#41]
 superseded_by: null
 ---
 
 Requirements, acceptance criteria and open decisions for the node, with links
-to supporting docs such as the [key rules](dedup-keys.md) and the
-[window ADR](../../adr/2026-09-dedup-window.md).
+to supporting docs such as the [ranking rules](ranking-rules.md) and the
+[search ADR](../../adr/2026-09-search-engine.md).
 ```
 
 | Field | Required | Rule |
