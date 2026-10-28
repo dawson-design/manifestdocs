@@ -65,7 +65,7 @@ fn folder_name(file: &TreePath) -> &str {
 
 // A node file stands for its node's folder.
 fn start_folder(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<TreePath> {
-    let path = tree_path(arg, cwd, tree_root)?;
+    let path = path_in_tree(tree, arg, cwd, tree_root)?;
     if let Some(entry) = tree.entries.get(&path) {
         return Ok(entry.location.folder());
     }
@@ -73,4 +73,19 @@ fn start_folder(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<
         return Ok(path);
     }
     bail!("`{arg}` isn't a node file or a folder")
+}
+
+/// `arg` as a path in this tree. A nested tree's nodes aren't this tree's, so a path into one
+/// is an error that names it.
+pub fn path_in_tree(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<TreePath> {
+    let path = tree_path(arg, cwd, tree_root)?;
+    let nested = tree.nested_trees.iter();
+    if let Some(nested) = nested
+        .into_iter()
+        .find(|n| path == **n || path.is_within(n))
+    {
+        let folder = relative(&tree_root.join(nested.as_str()), cwd);
+        bail!("`{arg}` is in a separate tree, at `{folder}`; run the command there");
+    }
+    Ok(path)
 }

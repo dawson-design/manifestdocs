@@ -212,3 +212,24 @@ fn reads_a_tree_whose_supporting_doc_isnt_utf8() {
         show.stdout
     );
 }
+
+#[test]
+fn names_the_nested_tree_a_path_leads_into() {
+    let fixture = cookbook("tree-nested-arg", true);
+
+    let tree = fixture.run("", &["tree", "vendor"]);
+    let show = fixture.run("", &["show", "vendor/vendor.md"]);
+
+    for run in [&tree, &show] {
+        assert_eq!(run.stdout, "");
+        assert_eq!(run.code, 2);
+    }
+    assert_eq!(
+        tree.stderr,
+        "error: `vendor` is in a separate tree, at `vendor`; run the command there\n"
+    );
+    assert_eq!(
+        show.stderr,
+        "error: `vendor/vendor.md` is in a separate tree, at `vendor`; run the command there\n"
+    );
+}
