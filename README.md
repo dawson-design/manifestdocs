@@ -16,3 +16,7 @@ cargo clippy --all-targets -- -D warnings
 ```sh
 cargo install --path crates/manifestdocs
 ```
+
+## Check a tree
+
+Run `manifestdocs check` anywhere inside a tree. It exits 1 when the tree has errors and 2 when it can't run.

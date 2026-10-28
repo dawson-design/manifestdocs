@@ -1,4 +1,5 @@
 mod anchors;
+mod dogfood;
 mod files;
 mod layout;
 mod links;

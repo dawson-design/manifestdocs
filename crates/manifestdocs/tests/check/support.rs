@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// A throwaway repo in the temp folder, removed when dropped.
@@ -35,18 +35,23 @@ impl Fixture {
 
     /// Runs `manifestdocs check` from `folder`, a path relative to the fixture root.
     pub fn check(&self, folder: &str) -> Run {
-        let output = Command::new(env!("CARGO_BIN_EXE_manifestdocs"))
-            .arg("check")
-            .current_dir(self.root.join(folder))
-            .env("HOME", &self.root)
-            .env("XDG_CONFIG_HOME", self.root.join(".config"))
-            .output()
-            .expect("the binary runs");
-        Run {
-            code: output.status.code().expect("the binary exits with a code"),
-            stdout: String::from_utf8(output.stdout).expect("stdout is UTF-8"),
-            stderr: String::from_utf8(output.stderr).expect("stderr is UTF-8"),
-        }
+        check_in(&self.root.join(folder), &self.root)
+    }
+}
+
+/// Runs `manifestdocs check` in `folder`, with `home` as the home folder.
+pub fn check_in(folder: &Path, home: &Path) -> Run {
+    let output = Command::new(env!("CARGO_BIN_EXE_manifestdocs"))
+        .arg("check")
+        .current_dir(folder)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .output()
+        .expect("the binary runs");
+    Run {
+        code: output.status.code().expect("the binary exits with a code"),
+        stdout: String::from_utf8(output.stdout).expect("stdout is UTF-8"),
+        stderr: String::from_utf8(output.stderr).expect("stderr is UTF-8"),
     }
 }
 
