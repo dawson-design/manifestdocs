@@ -104,10 +104,23 @@ fn after_an_edit_shows_claude_the_errors_in_the_tree() {
 fn after_an_edit_stays_quiet_unless_the_edited_files_tree_has_errors() {
     let broken = repo("plugin-edit-quiet-broken", "Cookbook");
     let clean = repo("plugin-edit-quiet-clean", "\"Cookbook\"");
+    let uncloned = Fixture::new(
+        "plugin-edit-quiet-uncloned",
+        &[
+            (".manifestdocs/config.yaml", "tree: ../cookbook-docs\n"),
+            ("README.md", "# Cookbook\n"),
+        ],
+    );
     let cases = [
         ("clean tree", &clean, "docs/search/search.md", true),
         ("not Markdown", &broken, "docs/search/notes.txt", true),
         ("outside the tree", &broken, "README.md", true),
+        (
+            "pointer to a docs repo not cloned",
+            &uncloned,
+            "README.md",
+            true,
+        ),
         ("no binary", &broken, "docs/search/search.md", false),
     ];
     for (name, fixture, file, binary) in cases {

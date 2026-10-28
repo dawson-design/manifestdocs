@@ -170,3 +170,27 @@ fn checks_the_tree_that_contains_a_given_path() {
     assert_eq!(missing.stderr, "error: no file or folder `gone.md`\n");
     assert_eq!(missing.code, 2);
 }
+
+/// A file is in a tree only when walking up from it finds one, so a pointer to a docs repo
+/// that isn't cloned doesn't make a code repo's README an error about the pointer.
+#[test]
+fn a_file_outside_a_tree_isnt_checked_through_a_broken_pointer() {
+    let fixture = Fixture::new(
+        "check-path-broken-pointer",
+        &[
+            (".manifestdocs/config.yaml", "tree: ../cookbook-docs\n"),
+            ("README.md", "# Cookbook\n"),
+        ],
+    );
+
+    let file = fixture.run("", &["check", "README.md"]);
+    let folder = fixture.run("", &["check", "."]);
+
+    assert_eq!(file.stderr, "error: `README.md` isn't in a tree\n");
+    assert_eq!(file.code, 2);
+    assert_eq!(
+        folder.stderr,
+        "error: .manifestdocs/config.yaml: tree `../cookbook-docs` has no manifestdocs.yaml\n"
+    );
+    assert_eq!(folder.code, 2);
+}

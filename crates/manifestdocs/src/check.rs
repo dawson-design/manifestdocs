@@ -20,7 +20,13 @@ pub fn run(path: Option<&str>, strict: bool) -> Result<ExitCode> {
         Some(path) => start_folder(path, &cwd)?,
         None => cwd.clone(),
     };
-    let roots = locate(&start)?;
+    let roots = match (locate(&start), path) {
+        (Ok(roots), _) => roots,
+        // `locate` fails only after walking up finds no tree, so a file isn't in one, whatever
+        // a pointer above it names.
+        (Err(_), Some(path)) if !cwd.join(path).is_dir() => bail!("`{path}` isn't in a tree"),
+        (Err(error), _) => return Err(error),
+    };
     if let Some(path) = path {
         in_tree(path, &cwd, &roots.tree_root)?;
     }
