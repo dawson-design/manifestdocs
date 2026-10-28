@@ -24,7 +24,7 @@ struct GitHubConfig { host: Host, docs_repo: RepoRef }
 enum MergeMode { Review, Proposed }
 struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
-// ~/.config/manifestdocs/config.yaml, with `tree` and `show`
+// ~/.config/manifestdocs/config.yaml
 struct Workspace { path: AbsPath, tree: AbsPath }
 
 struct NodeId(String);               // "fd-" + exactly 6 lowercase hex
@@ -44,12 +44,18 @@ struct Node {
 enum NodeLocation { Root, Folder(TreePath) }
 enum NodeStatus { Active(StatusName), Superseded { by: NodeId } }
 
+// What `tree` and `show` read
 struct Tree {
     config: TreeConfig,
-    nodes: BTreeMap<NodeId, Node>,
-    parents: BTreeMap<NodeId, NodeId>,     // with `tree` and `show`; no entry: the root node, or top level when there is none
-    owners: BTreeMap<TreePath, NodeId>,    // with `tree` and `show`; supporting docs; no entry: unowned
-    skipped_trees: Vec<TreePath>,
+    entries: BTreeMap<TreePath, Entry>,    // keyed by node file, since two files can share an ID
+    parents: BTreeMap<TreePath, TreePath>, // node file -> parent's node file; no entry: the root node, or top level when there is none
+    owners: BTreeMap<TreePath, TreePath>,  // supporting doc -> owner's node file; no entry: unowned
+}
+struct Entry {                             // a node file whose `id` parses
+    file: TreePath,
+    location: NodeLocation,
+    id: NodeId,
+    node: Result<Node, Vec<Finding>>,      // Err: the errors in its frontmatter
 }
 
 // What the I/O side reads for the pure core
@@ -115,6 +121,9 @@ The types can't express these, so `check` does.
 - A folder named `decisions` under a node is its records folder, never a node.
 - `NoRootNode` is reported on `manifestdocs.yaml` and names the expected root node file. `NestedTreeSkipped` is reported on the nested tree's folder.
 - Anchors must match a heading's GitHub slug exactly. Supersession cycles aren't detected.
-- When workspace paths in the user config overlap, the longest match wins.
+- When workspace paths in the user config overlap, the longest match wins. The user config is read only when walking up finds no tree, its paths are absolute or start with `~/`, and an unknown key is an error.
+- `tree` and `show` count a node file whose `id` parses as a node, as `check` does. When its frontmatter has errors, `tree` marks it `has problems`, and `show` prints the errors and exits 1, so one bad edit doesn't hide part of the tree.
+- A command-line argument that starts with `fd-` is an ID or ID prefix. A folder with that name is written `./fd-x`.
+- A node's supporting docs are files of any type. `manifestdocs.yaml` and decision records aren't supporting docs.
 - Link paths are repo paths, not tree paths, because a link can leave the tree, such as a link to an ADR folder next to it.
 - The snapshot lists what GitHub shows: dotfiles are in, files the repo's `.gitignore` files exclude are out, and nested repos and submodules are skipped. A tracked file that matches `.gitignore` is missed until M2 reads git's index.

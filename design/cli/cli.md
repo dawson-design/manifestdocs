@@ -20,9 +20,11 @@ summary: "The commands, and their text and JSON output."
 | `mfd stale` | Report open issues whose node changed after their `spec-ref` | Yes |
 | `mfd decide` | Write a decision record from a file or stdin; see [decision records](../decision-records/decision-records.md) | No |
 | `mfd decisions [id]` | List decision records for a node and its ancestors, or for the whole tree | No |
-| `mfd init` | Create `manifestdocs.yaml` and a root node | No |
+| `mfd init [title]` | Create `manifestdocs.yaml` and a root node, named after the title in kebab case | No |
 
 Commands that need GitHub fail with a clear message when `gh` is missing or unauthenticated. All other commands still work.
+
+Paths on the command line and in output are relative to the current folder, so a path one command prints works as another's argument. `check` exits 1 when the tree has errors, and `show` exits 1 when the node's frontmatter has errors, which it prints. Every command exits 2 when it can't run, such as when there's no tree or an argument names no single node.
 
 ## Output
 
