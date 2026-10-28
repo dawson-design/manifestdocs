@@ -81,9 +81,31 @@ fn quotes_a_name_that_yaml_would_read_as_null() {
     );
 }
 
+/// The names in the fixture's `cookbook-docs` folder, sorted.
+fn files_in_folder(fixture: &Fixture) -> Vec<String> {
+    let mut files: Vec<String> = fs::read_dir(fixture.path("cookbook-docs"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    files
+}
+
 #[test]
-fn refuses_to_replace_a_file_or_make_a_name_from_no_letters() {
+fn refuses_to_replace_a_file_or_take_an_unusable_title() {
     let cases = [
+        (
+            "init-control-character",
+            "notes.md",
+            "Cook\tbook",
+            "error: the title can't contain control characters\n",
+        ),
+        (
+            "init-not-yaml",
+            "notes.md",
+            "Cook\u{fffe}book",
+            "error: can't write `Cook\u{fffe}book` as a YAML title\n",
+        ),
         (
             "init-config-exists",
             "manifestdocs.yaml",
@@ -111,13 +133,36 @@ fn refuses_to_replace_a_file_or_make_a_name_from_no_letters() {
 
         assert_eq!(run.stderr, expected, "{name}");
         assert_eq!(run.code, 2, "{name}");
-        let mut files: Vec<String> = fs::read_dir(fixture.path("cookbook-docs"))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        files.sort();
-        assert_eq!(files, [existing], "{name}");
+        assert_eq!(files_in_folder(&fixture), [existing], "{name}");
         let kept = fs::read_to_string(fixture.path(&path)).unwrap();
         assert_eq!(kept, "keep\n", "{name}");
     }
+}
+
+#[test]
+fn counts_a_symlink_to_nothing_as_an_existing_file() {
+    let fixture = empty_folder("init-dangling-symlink", &[]);
+    std::os::unix::fs::symlink("gone.md", fixture.path("cookbook-docs/cookbook.md")).unwrap();
+
+    let run = fixture.run("cookbook-docs", &["init", "Cookbook"]);
+
+    assert_eq!(run.stderr, "error: cookbook.md already exists\n");
+    assert_eq!(files_in_folder(&fixture), ["cookbook.md"]);
+}
+
+#[test]
+fn leaves_nothing_behind_when_a_file_cant_be_created() {
+    let fixture = empty_folder("init-name-too-long", &[]);
+    let title = ["Cookbook"; 40].join(" ");
+
+    let run = fixture.run("cookbook-docs", &["init", &title]);
+
+    assert!(
+        run.stderr
+            .starts_with("error: can't create cookbook-cookbook-"),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(run.code, 2);
+    assert_eq!(files_in_folder(&fixture), Vec::<String>::new());
 }
