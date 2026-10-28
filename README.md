@@ -17,6 +17,17 @@ cargo clippy --all-targets -- -D warnings
 cargo install --path crates/manifestdocs
 ```
 
-## Check a tree
+## Use
 
-Run `manifestdocs check` anywhere inside a tree. It exits 1 when the tree has errors and 2 when it can't run.
+- `manifestdocs init [title]` starts a tree in the current folder.
+- `manifestdocs tree [path] [--depth n]` prints an outline of the nodes.
+- `manifestdocs show <id or path>` prints one node, with its parent and supporting docs.
+- `manifestdocs check` validates the tree. It exits 1 when the tree has errors and 2 when it can't run.
+
+`tree`, `show` and `check` work anywhere inside a tree. To use them from a code repo outside the tree, map the repo's folder to the tree in `~/.config/manifestdocs/config.yaml`:
+
+```yaml
+workspaces:
+  - path: ~/work/cookbook
+    tree: ~/work/cookbook/cookbook-docs
+```
