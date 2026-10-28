@@ -128,3 +128,45 @@ fn ignores_markdown_inside_a_skipped_nested_tree() {
     );
     assert_eq!(run.code, 0);
 }
+
+#[test]
+fn checks_the_tree_that_contains_a_given_path() {
+    let broken =
+        "---\nid: fd-000002\ntitle: Search\nstatus: draft\nsummary: \"Search summary.\"\n---\n";
+    let fixture = Fixture::new(
+        "check-path",
+        &[
+            (".manifestdocs/config.yaml", "tree: docs\n"),
+            ("README.md", "# Cookbook\n"),
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-000001", "Cookbook")),
+            ("docs/search/search.md", broken),
+            ("notes/manifestdocs.yaml", "name: notes\n"),
+            ("notes/notes.md", &node("fd-000003", "Notes")),
+        ],
+    );
+
+    let in_docs = fixture.run("", &["check", "docs/search/search.md"]);
+    let in_notes = fixture.run("", &["check", "notes"]);
+    let outside = fixture.run("", &["check", "README.md"]);
+    let here = fixture.run("", &["check", "."]);
+    let plain = fixture.run("", &["check"]);
+    let missing = fixture.run("", &["check", "gone.md"]);
+
+    assert_eq!(
+        in_docs.stdout,
+        "docs/search/search.md:3: error: `title` must be double-quoted\n\n2 nodes: 1 error\n"
+    );
+    assert_eq!(in_docs.code, 1);
+    assert_eq!(in_notes.stdout, "1 node: no problems\n");
+    assert_eq!(
+        outside.stderr,
+        "error: `README.md` isn't in a tree: the nearest tree is `docs`\n"
+    );
+    assert_eq!(outside.code, 2);
+    // A folder is checked as running `check` in it would be, through the pointer.
+    assert_eq!(here.stdout, plain.stdout);
+    assert_eq!(here.code, 1);
+    assert_eq!(missing.stderr, "error: no file or folder `gone.md`\n");
+    assert_eq!(missing.code, 2);
+}

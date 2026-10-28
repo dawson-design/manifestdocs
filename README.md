@@ -76,7 +76,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `init [title]` | Starts a tree in the current folder |
 | `tree [path] [--depth n]` | Outlines the nodes, from the root or from a node or folder |
 | `show <id or path>` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
-| `check` | Validates frontmatter, IDs, links and anchors |
+| `check [path]` | Validates frontmatter, IDs, links and anchors, in the tree that contains `path` or the current folder |
 
 Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
 
