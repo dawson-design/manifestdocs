@@ -2,6 +2,7 @@ mod check;
 mod files;
 mod locate;
 mod report;
+mod show;
 mod tree;
 
 use std::process::ExitCode;
@@ -28,12 +29,18 @@ enum Command {
         #[arg(long)]
         depth: Option<usize>,
     },
+    /// Print one node in full, with its parent and supporting docs
+    Show {
+        /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
+        node: String,
+    },
 }
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Command::Check => check::run(),
         Command::Tree { path, depth } => tree::run(path.as_deref(), depth),
+        Command::Show { node } => show::run(&node),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error:#}");
