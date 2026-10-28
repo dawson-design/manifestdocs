@@ -192,3 +192,23 @@ fn keeps_nodes_with_broken_frontmatter_in_place() {
     );
     assert_eq!(show.code, 1);
 }
+
+#[test]
+fn reads_a_tree_whose_supporting_doc_isnt_utf8() {
+    let fixture = cookbook("tree-latin1", true);
+    std::fs::write(fixture.path("recipes/search/latin1.md"), b"caf\xe9\n").unwrap();
+
+    let tree = fixture.run("", &["tree", "recipes/search"]);
+    let show = fixture.run("", &["show", "recipes/search"]);
+
+    assert_eq!(
+        tree.stdout,
+        "Search (fd-000003, approved)  recipes/search/search.md\n"
+    );
+    assert!(
+        show.stdout
+            .ends_with("- recipes/search/latin1.md\n- recipes/search/ranking-rules.md\n"),
+        "{}",
+        show.stdout
+    );
+}

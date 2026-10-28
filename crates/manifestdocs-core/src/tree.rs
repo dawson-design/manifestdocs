@@ -1,6 +1,6 @@
 //! A tree: its config and the nodes found under its root, and the rules across nodes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::check::{Snapshot, read_node};
 use crate::config::{self, TreeConfig};
@@ -8,7 +8,7 @@ use crate::finding::{Field, Finding, Problem, Severity};
 use crate::id::{NodeId, NodeIdPrefix};
 use crate::layout::layout;
 use crate::node::{Node, NodeLocation, NodeStatus, ParsedNode};
-use crate::paths::TreePath;
+use crate::paths::{RepoPath, TreePath};
 
 /// How a command names one node: by ID or prefix, or by its node file or folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +47,20 @@ pub struct Entry {
     pub id: NodeId,
     /// The node, or the errors in its frontmatter, which stop `tree` and `show` using it.
     pub node: Result<Node, Vec<Finding>>,
+}
+
+/// The files `read_tree` reads: the files in a node file's position. Supporting docs are
+/// only listed.
+pub fn node_files_to_read(
+    config: &TreeConfig,
+    tree_root: &RepoPath,
+    paths: &BTreeSet<RepoPath>,
+) -> Vec<RepoPath> {
+    let layout = layout(config, tree_root, paths);
+    let node_files = layout.node_files.iter();
+    node_files
+        .filter_map(|file| tree_root.join(file.path.as_str()))
+        .collect()
 }
 
 pub fn read_tree(config: &TreeConfig, snapshot: &Snapshot) -> Tree {

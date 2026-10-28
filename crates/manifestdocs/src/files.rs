@@ -9,7 +9,7 @@ use ignore::{DirEntry, WalkBuilder};
 use manifestdocs_core::check::{Snapshot, markdown_to_read, outside_anchor_targets};
 use manifestdocs_core::config::{self, TreeConfig};
 use manifestdocs_core::paths::RepoPath;
-use manifestdocs_core::tree::{Tree, read_tree};
+use manifestdocs_core::tree::{Tree, node_files_to_read, read_tree};
 
 use crate::locate::Roots;
 use crate::report::relative;
@@ -24,26 +24,34 @@ pub fn read_config(tree_root: &Path, cwd: &Path) -> Result<TreeConfig> {
     })
 }
 
-/// Reads the tree's config and nodes, for the commands that read a tree without checking it.
+/// Reads the tree's config and node files, for the commands that read a tree without
+/// checking it. Supporting docs are listed but not read, so one that isn't UTF-8 can't stop
+/// `tree` or `show`.
 pub fn tree(roots: &Roots, cwd: &Path) -> Result<Tree> {
     let config = read_config(&roots.tree_root, cwd)?;
-    let snapshot = snapshot(roots, &config, cwd)?;
+    let mut snapshot = listed(roots)?;
+    let node_files = node_files_to_read(&config, &snapshot.tree_root, &snapshot.paths);
+    read_into(&mut snapshot, node_files, &roots.repo_root, cwd)?;
     Ok(read_tree(&config, &snapshot))
 }
 
 /// Lists the repo's files and reads the tree's Markdown.
 pub fn snapshot(roots: &Roots, config: &TreeConfig, cwd: &Path) -> Result<Snapshot> {
-    let tree_root = repo_path(&roots.repo_root, &roots.tree_root)
-        .context("the tree's folder path isn't UTF-8")?;
-    let paths = list_files(&roots.repo_root)?;
-    let mut snapshot = Snapshot {
-        tree_root,
-        paths,
-        markdown: BTreeMap::new(),
-    };
+    let mut snapshot = listed(roots)?;
     let in_tree = markdown_to_read(config, &snapshot.tree_root, &snapshot.paths);
     read_into(&mut snapshot, in_tree, &roots.repo_root, cwd)?;
     Ok(snapshot)
+}
+
+/// A snapshot of the repo's file list, with no Markdown read yet.
+fn listed(roots: &Roots) -> Result<Snapshot> {
+    let tree_root = repo_path(&roots.repo_root, &roots.tree_root)
+        .context("the tree's folder path isn't UTF-8")?;
+    Ok(Snapshot {
+        tree_root,
+        paths: list_files(&roots.repo_root)?,
+        markdown: BTreeMap::new(),
+    })
 }
 
 /// Reads the Markdown outside the tree that links point into with an anchor, so `check`
