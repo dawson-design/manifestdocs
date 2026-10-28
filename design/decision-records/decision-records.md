@@ -17,21 +17,21 @@ One file per decision, in the node's `decisions/` folder, named by date and topi
 ---
 id: dc-3f1a8c2
 node: fd-7c2e41
-title: "Default dedup window is ten minutes"
+title: "Search results show 20 recipes per page"
 status: accepted          # proposed | accepted | superseded | rejected
-topic: dedup-window-default
-decided_by: alastair      # optional
+topic: search-page-size
+decided_by: octocat       # optional
 date: 2026-10-28
-source: [example-org/eeb-dedup#212]
-applies_to: [example-org/eeb-dedup:src/window.rs]
+source: [example-org/cookbook-web#212]
+applies_to: [example-org/cookbook-web:src/search/page.ts]
 supersedes: null
 ---
 
-**Decision.** The default window is ten minutes.
+**Decision.** Search shows 20 recipes per page.
 
-**Why.** Producers retry for up to eight minutes after a timeout.
+**Why.** Readers rarely scroll past 20 results before they refine a search.
 
-**Rejected.** A five-minute window, which let late retries through as new events.
+**Rejected.** Infinite scroll, which broke the back button on recipe pages.
 ```
 
 `decided_by` is optional, for teams whose records don't name people. `source` lists issues and pull requests, never harness session IDs. `applies_to` lists the code a decision affects, as `repo:path` text or links for readers, and the tool doesn't check it.
@@ -74,7 +74,7 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 
 When the tool creates `.manifestdocs/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo. `--out <dir>` overrides the folder.
 
-The personal factory can use `merge: proposed` for speed. A team with governance needs, such as the EEB, uses `merge: review`.
+The personal factory can use `merge: proposed` for speed. A team whose changes need review before they take effect uses `merge: review`.
 
 ## Read path
 

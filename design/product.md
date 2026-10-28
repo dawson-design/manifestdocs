@@ -50,7 +50,7 @@ The trees don't map one to one. A top-level work item can touch several areas, a
 
 | | Personal memory | Shared decisions |
 |---|---|---|
-| Example | "Prefers small PRs." "Uses Zed." | "Dedup window defaults to ten minutes because producers retry for up to eight." |
+| Example | "Prefers small PRs." "Uses Zed." | "Search shows 20 recipes per page because readers rarely scroll further before refining." |
 | Scope | One person | The project |
 | Stored in | The agent's local memory | Decision records in the docs repo |
 | Review | None | A PR, or merged as `proposed` and confirmed later |
@@ -73,7 +73,7 @@ Both tools store work in the repo. Manifest Docs reads work from GitHub Issues a
 |---|---|
 | Agent runs that start from `mfd context` in the personal factory | 90% within a month of release |
 | Stale issues found before an agent starts work | Every stale issue flagged by `stale` before `agent-run` |
-| Decisions recorded from sessions | Several a week in the personal factory; at least one a sprint per developer on the EEB pilot |
+| Decisions recorded from sessions | Several a week in the personal factory; at least one a sprint per developer on the team pilot |
 | Agent runs whose context included a decision made in an earlier session | Rising month over month |
 | Proposed decisions reviewed within a week | 90% |
 | `mfd check` in docs repo CI | Running on every docs PR for both factories |
