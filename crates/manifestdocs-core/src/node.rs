@@ -30,6 +30,16 @@ pub enum NodeLocation {
     Folder(TreePath),
 }
 
+impl NodeLocation {
+    /// The node's folder, which is empty for the root node.
+    pub fn folder(&self) -> TreePath {
+        match self {
+            NodeLocation::Root => TreePath::default(),
+            NodeLocation::Folder(folder) => folder.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeStatus {
     Active(StatusName),

@@ -2,4 +2,5 @@
 
 mod check;
 mod support;
+mod tree;
 mod workspace;

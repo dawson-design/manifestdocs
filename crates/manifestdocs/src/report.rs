@@ -1,11 +1,23 @@
-//! Renders findings as `path:line: severity: message` lines and a summary.
+//! Renders findings as `path:line: severity: message` lines and a summary, and writes output.
 
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::io::{self, Write as _};
 use std::iter;
 use std::path::{Component, Path, PathBuf};
 
+use anyhow::{Context, Result};
 use manifestdocs_core::check::Report;
 use manifestdocs_core::finding::{Finding, Problem, Severity};
+
+// A reader such as `head` that closes the pipe early isn't an error.
+pub fn write_stdout(text: &str) -> Result<()> {
+    match io::stdout().lock().write_all(text.as_bytes()) {
+        Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
+            Err(error).context("can't write the output")
+        }
+        _ => Ok(()),
+    }
+}
 
 pub fn render(report: &Report, tree_root: &Path, cwd: &Path) -> String {
     let mut out = String::new();
@@ -32,7 +44,7 @@ pub fn relative(path: &Path, base: &Path) -> String {
     relative.display().to_string()
 }
 
-fn finding_line(finding: &Finding, tree_root: &Path, cwd: &Path) -> String {
+pub fn finding_line(finding: &Finding, tree_root: &Path, cwd: &Path) -> String {
     let mut path = relative(&tree_root.join(finding.file.as_str()), cwd);
     if finding.problem == Problem::NestedTreeSkipped {
         path.push('/');
