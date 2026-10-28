@@ -1,9 +1,10 @@
 //! `manifestdocs.yaml`, the file that marks a tree's root.
 
 use serde::Deserialize;
-use serde_saphyr::Spanned;
+use serde_saphyr::{MessageFormatter, Spanned, UserMessageFormatter};
 use thiserror::Error;
 
+use crate::paths::TreePath;
 use crate::refs::{Host, RepoRef};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,6 +67,8 @@ struct RawDecisions {
     merge: Option<MergeMode>,
 }
 
+/// The file that marks a tree's root.
+pub const FILE_NAME: &str = "manifestdocs.yaml";
 const DEFAULT_STATUSES: [&str; 2] = ["draft", "approved"];
 pub const SUPERSEDED: &str = "superseded";
 
@@ -77,6 +80,14 @@ pub fn parse(text: &str) -> Result<TreeConfig, ConfigError> {
         merge: raw.decisions.and_then(|d| d.merge).unwrap_or_default(),
         statuses: statuses(raw.statuses)?,
     })
+}
+
+impl TreeConfig {
+    /// `<name>.md` in the tree's root folder.
+    pub fn root_node_file(&self) -> TreePath {
+        TreePath::new(&format!("{}.md", self.name.0))
+            .expect("a tree name is one file-name-safe segment")
+    }
 }
 
 impl TreeName {
@@ -152,10 +163,14 @@ fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
     }
 }
 
+// The user formatter leaves out the location, which `line` already carries, and the
+// library's own setting names.
 fn yaml_error(error: serde_saphyr::Error) -> ConfigError {
     ConfigError {
         line: error.location().and_then(|l| u32::try_from(l.line()).ok()),
-        message: error.without_snippet().to_string(),
+        message: UserMessageFormatter
+            .format_message(error.without_snippet())
+            .into_owned(),
     }
 }
 

@@ -21,6 +21,11 @@ impl RepoPath {
         normalise(&self.0, relative).map(Self)
     }
 
+    /// This path relative to `tree_root`, when it is the root or inside it.
+    pub fn in_tree(&self, tree_root: &RepoPath) -> Option<TreePath> {
+        within(&self.0, &tree_root.0).map(|rest| TreePath(rest.to_owned()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -32,9 +37,38 @@ impl TreePath {
         normalise("", path).map(Self)
     }
 
+    /// The folder this path is in, or `None` for the root itself.
+    pub fn parent(&self) -> Option<TreePath> {
+        if self.0.is_empty() {
+            return None;
+        }
+        let folder = self.0.rsplit_once('/').map_or("", |(folder, _)| folder);
+        Some(TreePath(folder.to_owned()))
+    }
+
+    /// The last segment, or an empty string for the root.
+    pub fn file_name(&self) -> &str {
+        self.0.rsplit_once('/').map_or(&self.0, |(_, name)| name)
+    }
+
+    /// Whether this path is inside `folder`, not counting `folder` itself.
+    pub fn is_within(&self, folder: &TreePath) -> bool {
+        within(&self.0, &folder.0).is_some_and(|rest| !rest.is_empty())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+fn within<'a>(path: &'a str, folder: &str) -> Option<&'a str> {
+    if folder.is_empty() {
+        return Some(path);
+    }
+    if path == folder {
+        return Some("");
+    }
+    path.strip_prefix(folder)?.strip_prefix('/')
 }
 
 impl fmt::Display for RepoPath {
@@ -93,6 +127,46 @@ mod tests {
         assert_eq!(RepoPath::new(".."), None);
         assert_eq!(RepoPath::new("design/../../x.md"), None);
         assert_eq!(TreePath::new("../x.md"), None);
+    }
+
+    #[test]
+    fn places_repo_paths_inside_a_tree() {
+        let tree_root = RepoPath::new("docs/design").unwrap();
+        let in_tree = |path: &str| {
+            RepoPath::new(path)
+                .unwrap()
+                .in_tree(&tree_root)
+                .map(|p| p.0)
+        };
+
+        assert_eq!(in_tree("docs/design/cli/cli.md"), Some("cli/cli.md".into()));
+        assert_eq!(in_tree("docs/design"), Some("".into()));
+        assert_eq!(in_tree("docs/design-notes/x.md"), None);
+        assert_eq!(in_tree("README.md"), None);
+        assert_eq!(
+            RepoPath::new("README.md")
+                .unwrap()
+                .in_tree(&RepoPath::default())
+                .map(|p| p.0),
+            Some("README.md".into())
+        );
+    }
+
+    #[test]
+    fn splits_a_tree_path_into_folder_and_name() {
+        let path = TreePath::new("cli/flags/flags.md").unwrap();
+        let folder = TreePath::new("cli").unwrap();
+
+        assert_eq!(path.parent().map(|p| p.0), Some("cli/flags".into()));
+        assert_eq!(path.file_name(), "flags.md");
+        assert!(path.is_within(&folder));
+        assert!(!folder.is_within(&folder));
+        assert!(!TreePath::new("cli-v2/x.md").unwrap().is_within(&folder));
+        assert_eq!(
+            TreePath::new("x.md").unwrap().parent().map(|p| p.0),
+            Some("".into())
+        );
+        assert_eq!(TreePath::default().parent(), None);
     }
 
     #[test]
