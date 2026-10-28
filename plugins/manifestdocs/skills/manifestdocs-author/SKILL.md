@@ -6,6 +6,8 @@ allowed-tools: Bash(manifestdocs check:*), Bash(manifestdocs tree:*), Bash(manif
 
 # Write a valid node
 
+Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop.
+
 A tree is the folder with `manifestdocs.yaml`. Each feature is a folder with a node file named after the folder, such as `recipes/search/search.md`. The root node is `<name>.md` in the tree's folder, where `<name>` comes from `manifestdocs.yaml`.
 
 ## Add a node
