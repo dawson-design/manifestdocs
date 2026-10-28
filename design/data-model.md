@@ -50,6 +50,7 @@ struct Tree {
     entries: BTreeMap<TreePath, Entry>,    // keyed by node file, since two files can share an ID
     parents: BTreeMap<TreePath, TreePath>, // node file -> parent's node file; no entry: the root node, or top level when there is none
     owners: BTreeMap<TreePath, TreePath>,  // supporting doc -> owner's node file; no entry: unowned
+    nested_trees: Vec<TreePath>,           // a path argument into one is an error that names it
 }
 struct Entry {                             // a node file whose `id` parses
     file: TreePath,
