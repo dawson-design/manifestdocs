@@ -18,6 +18,7 @@ pub struct Node {
 }
 
 /// Where a node is, taken from its file's place in the tree, never from frontmatter.
+/// `Folder` always names a folder below the root; the root itself is `Root`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeLocation {
     Root,

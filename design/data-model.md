@@ -72,7 +72,7 @@ enum Problem {
     DuplicateId { also_in: TreePath }, UnknownStatus(String),
     SupersededWithoutReplacement, ReplacementWithoutSuperseded, SupersededBySelf,
     ReplacementNotFound(NodeId), NodeIdOutsideNodeFile(NodeId),
-    BrokenLink(String), MissingAnchor(String),
+    BrokenLink(String), MissingAnchor { path: String, anchor: String },
     NoRootNode { expected: TreePath }, NestedTreeSkipped, UnknownField(String), NodeFileWithoutId,
 }
 impl Problem { fn severity(&self) -> Severity { /* the last four are warnings */ } }
@@ -104,7 +104,7 @@ The types can't express these, so `check` does.
 
 ## Defaults and edge cases
 
-- `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, listing `superseded` in it changes nothing, and an empty list is an error. A status name is one word with no spaces.
+- `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, including when it's blank. Listing `superseded` in it, in any case, changes nothing, and an empty list is an error. A status name is one word with no spaces.
 - `merge` defaults to `review`.
 - An unknown key in `manifestdocs.yaml` is an error, because a typo such as `statues:` would otherwise fall back to the default. An unknown node field is a warning, so teams can add their own fields and typos still show.
 - Stored node IDs are exactly 6 hex characters after `fd-`. Commands accept a prefix of 4 to 6, and a prefix that matches more than one node is an error that lists the matches.

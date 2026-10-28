@@ -83,7 +83,9 @@ impl fmt::Display for TreePath {
     }
 }
 
+// A leading `/` starts from the root, as GitHub resolves root-relative links.
 fn normalise(base: &str, path: &str) -> Option<String> {
+    let base = if path.starts_with('/') { "" } else { base };
     let mut parts: Vec<&str> = base.split('/').filter(|part| !part.is_empty()).collect();
     for part in path.split('/') {
         match part {
@@ -178,5 +180,6 @@ mod tests {
         assert_eq!(joined("./notes.md"), Some("design/cli/notes.md".into()));
         assert_eq!(joined("../../README.md"), Some("README.md".into()));
         assert_eq!(joined("../../../outside.md"), None);
+        assert_eq!(joined("/README.md"), Some("README.md".into()));
     }
 }
