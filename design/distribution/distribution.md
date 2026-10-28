@@ -1,8 +1,8 @@
 ---
 id: fd-f44774
-title: Distribution
+title: "Distribution"
 status: draft
-summary: Where the code is stored and how people install the tool before and after 1.0.
+summary: "Where the code is stored and how people install the tool before and after 1.0."
 ---
 
 # Distribution

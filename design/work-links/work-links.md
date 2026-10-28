@@ -1,8 +1,8 @@
 ---
 id: fd-0e0a4e
-title: Links to work
+title: "Links to work"
 status: draft
-summary: Links nodes to GitHub issues, reads their sub-issue hierarchy, and reports issues whose requirements changed after planning.
+summary: "Links nodes to GitHub issues, reads their sub-issue hierarchy, and reports issues whose requirements changed after planning."
 ---
 
 # Links to work

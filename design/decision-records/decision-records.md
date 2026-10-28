@@ -1,8 +1,8 @@
 ---
 id: fd-ae6745
-title: Decision records
+title: "Decision records"
 status: draft
-summary: Records decisions from coding sessions as reviewed files in the docs repo that every engineer and agent reads.
+summary: "Records decisions from coding sessions as reviewed files in the docs repo that every engineer and agent reads."
 ---
 
 # Decision records
@@ -17,7 +17,7 @@ One file per decision, in the node's `decisions/` folder, named by date and topi
 ---
 id: dc-3f1a8c2
 node: fd-7c2e41
-title: Default dedup window is ten minutes
+title: "Default dedup window is ten minutes"
 status: accepted          # proposed | accepted | superseded | rejected
 topic: dedup-window-default
 decided_by: alastair      # optional
@@ -60,7 +60,7 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 
 ## Input
 
-`mfd decide --file <path>` reads one record in the on-disk format, and `--file -` reads it from stdin. The tool fills in `id`, `date` and `status`, and rejects a supplied `id`, unknown fields and a status the repo setting forbids. It reports every validation error in one pass, each with the field, line and fix, and exits non-zero; `--json` returns the errors as an array. `--dry-run` prints the final record and its path without writing. Rerunning with the same node, topic and body exits 0 and prints the existing path, and a different body fails with a suggestion to use `supersedes`. `--unattended` marks factory runs, because agent shells often have no terminal to detect.
+`mfd decide --file <path>` reads one record in the on-disk format, and `--file -` reads it from stdin. The tool fills in `id`, `date` and `status`, and rejects a supplied `id`, an unquoted `title`, unknown fields and a status the repo setting forbids. It reports every validation error in one pass, each with the field, line and fix, and exits non-zero; `--json` returns the errors as an array. `--dry-run` prints the final record and its path without writing. Rerunning with the same node, topic and body exits 0 and prints the existing path, and a different body fails with a suggestion to use `supersedes`. `--unattended` marks factory runs, because agent shells often have no terminal to detect.
 
 ## Write path
 

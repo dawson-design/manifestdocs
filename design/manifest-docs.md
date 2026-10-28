@@ -1,8 +1,8 @@
 ---
 id: fd-622eed
-title: Manifest Docs
+title: "Manifest Docs"
 status: draft
-summary: A CLI that adds shared, living context on top of GitHub, with a feature tree in a docs repo, focused agent context and shared decision records.
+summary: "A CLI that adds shared, living context on top of GitHub, with a feature tree in a docs repo, focused agent context and shared decision records."
 ---
 
 # Manifest Docs (`mfd`)
@@ -13,7 +13,7 @@ Manifest Docs is a command-line tool that adds shared, living context on top of 
 
 It ships as one Rust binary (`manifestdocs`, alias `mfd`) and a thin Claude Code plugin. Git stores the tree and its history. GitHub hosts and reviews it. The binary reads from GitHub and never writes to it, and anything that git, GitHub, `gh` or a Markdown link already does stays out of the tool. There is no server, database or account.
 
-The [product brief](product.md) covers the problem, users, concepts, prior art and success measures. [Architecture](architecture.md) covers the language, crates and local folder, and [milestones](milestones.md) set the build order.
+The [product brief](product.md) covers the problem, users, concepts, prior art and success measures. [Architecture](architecture.md) covers the language, crates and local folder, the [data model](data-model.md) covers the types and the rules `check` enforces, and [milestones](milestones.md) set the build order.
 
 ## Goals
 

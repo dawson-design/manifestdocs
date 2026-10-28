@@ -1,8 +1,8 @@
 ---
 id: fd-8ff5b9
-title: CLI
+title: "CLI"
 status: draft
-summary: The commands, and their text and JSON output.
+summary: "The commands, and their text and JSON output."
 ---
 
 # CLI
