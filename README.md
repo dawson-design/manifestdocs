@@ -1,33 +1,103 @@
 # Manifest Docs
 
-A CLI that adds shared, living context on top of GitHub. The design tree starts at [design/manifest-docs.md](design/manifest-docs.md).
-
-## Build and test
-
-```sh
-cargo build
-cargo test
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-```
+Manifest Docs turns a folder of Markdown in a docs repo into a feature tree that people and coding agents can walk. Each feature is a folder with one node file for its requirements and decisions, and every file remains an ordinary Markdown page on GitHub, readable without the tool. The `manifestdocs` binary reads the tree from disk. It has no server or account, and it never writes to GitHub.
 
 ## Install
+
+Build from a clone of this repo, with Rust installed:
 
 ```sh
 cargo install --path crates/manifestdocs
 ```
 
-## Use
+## Start a tree
 
-- `manifestdocs init [title]` starts a tree in the current folder.
-- `manifestdocs tree [path] [--depth n]` prints an outline of the nodes.
-- `manifestdocs show <id or path>` prints one node, with its parent and supporting docs.
-- `manifestdocs check` validates the tree. It exits 1 when the tree has errors and 2 when it can't run.
+In the docs repo, `init` writes `manifestdocs.yaml` and a root node named after the title:
 
-`tree`, `show` and `check` work anywhere inside a tree. To use them from a code repo outside the tree, map the repo's folder to the tree in `~/.config/manifestdocs/config.yaml`:
+```console
+$ manifestdocs init Cookbook
+created manifestdocs.yaml and cookbook.md (fd-59db20)
+```
+
+Open `cookbook.md` and replace the placeholder summary.
+
+## Add a feature
+
+A folder is a feature node when it contains a Markdown file with the folder's name, such as `recipes/search/search.md`, with frontmatter like this:
+
+```markdown
+---
+id: fd-7c2e41
+title: "Recipe search"
+status: draft
+summary: "Finds recipes by ingredient, cuisine and cooking time."
+repos: [example-org/cookbook-web]
+work: [example-org/cookbook-docs#41]
+---
+
+# Recipe search
+
+Results rank by the [ranking rules](ranking-rules.md).
+```
+
+- `id` is `fd-` and 6 hex characters, unique in the tree. `openssl rand -hex 3` makes the 6 characters.
+- `title` and `summary` are required, and always double-quoted.
+- `status` is one of the `statuses` in `manifestdocs.yaml`, which default to `draft` and `approved`. It can also be `superseded`, with `superseded_by` set to the replacement's ID.
+- `repos` and `work` are optional lists of code repos and top-level issues.
+
+A node's parent is the nearest folder above it that is a node. Every other file in a node's folder, such as `ranking-rules.md`, is one of its supporting docs. A `decisions/` folder contains decision records and is never a node.
+
+## Read and check the tree
+
+```console
+$ manifestdocs tree
+Cookbook (fd-59db20, draft)  cookbook.md
+  Recipes (fd-1a2b3c, approved)  recipes/recipes.md
+    Recipe search (fd-7c2e41, draft)  recipes/search/search.md
+
+$ manifestdocs show fd-7c2e
+Recipe search (fd-7c2e41, draft)
+File: recipes/search/search.md
+Parent: Recipes (fd-1a2b3c)
+Summary: Finds recipes by ingredient, cuisine and cooking time.
+...
+Supporting docs:
+- recipes/search/ranking-rules.md
+
+$ manifestdocs check
+recipes/search/search.md:3: error: `title` must be double-quoted
+recipes/search/search.md:12: error: broken link `ranking.md`
+
+3 nodes: 2 errors
+```
+
+| Command | What it does |
+|---|---|
+| `init [title]` | Starts a tree in the current folder |
+| `tree [path] [--depth n]` | Outlines the nodes, from the root or from a node or folder |
+| `show <id or path>` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
+| `check` | Validates frontmatter, IDs, links and anchors |
+
+Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
+
+## Use a tree from a code repo
+
+Commands find the tree by walking up from the current folder. From a code repo cloned beside the docs repo, map the workspace to the tree in `~/.config/manifestdocs/config.yaml`:
 
 ```yaml
 workspaces:
   - path: ~/work/cookbook
     tree: ~/work/cookbook/cookbook-docs
 ```
+
+When workspaces overlap, the longest path wins.
+
+## Develop
+
+```sh
+cargo test
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+```
+
+The spec is the tree in [design/](design/manifest-docs.md), which passes its own `check`.
