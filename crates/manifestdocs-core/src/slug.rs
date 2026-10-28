@@ -30,33 +30,3 @@ fn slug(heading: &str) -> String {
         .map(|c| if c == ' ' { '-' } else { c })
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn slugs_headings_the_way_github_does() {
-        let cases = [
-            ("Write path", "write-path"),
-            ("A & B", "a--b"),
-            ("Why `check` exits 1", "why-check-exits-1"),
-            ("snake_case and kebab-case", "snake_case-and-kebab-case"),
-            ("Q&A: what's next?", "qa-whats-next"),
-            ("Café crème", "café-crème"),
-            ("日本語の見出し", "日本語の見出し"),
-            ("v1.0 (beta)", "v10-beta"),
-        ];
-        for (heading, expected) in cases {
-            assert_eq!(slug(heading), expected, "{heading}");
-        }
-    }
-
-    #[test]
-    fn numbers_repeated_headings() {
-        let anchors = anchors(["Notes", "Notes", "Notes-1", "Notes"]);
-
-        let expected = ["notes", "notes-1", "notes-1-1", "notes-2"];
-        assert_eq!(anchors, expected.map(String::from).into());
-    }
-}

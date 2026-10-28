@@ -70,3 +70,47 @@ fn reports_anchors_that_match_no_heading_inside_and_outside_the_tree() {
     );
     assert_eq!(run.code, 1);
 }
+
+#[test]
+fn matches_github_heading_anchors() {
+    let guide = "# Write path\n\n## A & B\n\n## Why `check` exits 1\n\n## snake_case and kebab-case\n\n\
+                 ## Q&A: what's next?\n\n## Café crème\n\n## 日本語の見出し\n\n## v1.0 (beta)\n\n\
+                 Setup steps\n---\n\n## Notes\n\n## Notes\n\n## Notes-1\n\n## Notes\n\n\
+                 ```\n# Not a heading\n```\n";
+    let links = [
+        "write-path",
+        "a--b",
+        "why-check-exits-1",
+        "snake_case-and-kebab-case",
+        "qa-whats-next",
+        "caf%C3%A9-cr%C3%A8me",
+        "日本語の見出し",
+        "v10-beta",
+        "setup-steps",
+        "notes",
+        "notes-1",
+        "notes-1-1",
+        "notes-2",
+        "not-a-heading",
+    ];
+    let body: String = links
+        .iter()
+        .map(|anchor| format!("[x](guide.md#{anchor})\n"))
+        .collect();
+    let root = format!("{}{body}", node("fd-000001", "Demo"));
+    let fixture = Fixture::new(
+        "slugs",
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("guide.md", guide),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(
+        run.stdout,
+        "demo.md:22: error: no heading `#not-a-heading` in `guide.md`\n\n1 node: 1 error\n"
+    );
+}

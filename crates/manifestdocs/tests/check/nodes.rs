@@ -128,6 +128,16 @@ fn warns_about_unknown_fields_and_node_files_without_an_id() {
             "---\ntitle: \"Feature\"\n---\n",
             "feature/feature.md:1: warning: node file has frontmatter but no `id`\n\n1 node: 1 warning\n",
         ),
+        (
+            "empty-block",
+            "---\n---\n# Feature\n",
+            "feature/feature.md:1: warning: node file has frontmatter but no `id`\n\n1 node: 1 warning\n",
+        ),
+        (
+            "comment-only-block",
+            "---\n# id: fd-000002\n---\n",
+            "feature/feature.md:1: warning: node file has frontmatter but no `id`\n\n1 node: 1 warning\n",
+        ),
     ];
     for (name, feature, expected) in cases {
         let run = check_feature(name, feature);
@@ -138,10 +148,15 @@ fn warns_about_unknown_fields_and_node_files_without_an_id() {
 
 #[test]
 fn treats_a_node_file_without_frontmatter_as_a_supporting_doc() {
-    let run = check_feature("no-frontmatter", "# Feature\n");
-
-    assert_eq!(run.stdout, "1 node: no problems\n");
-    assert_eq!(run.code, 0);
+    // Frontmatter only counts when `---` is the file's first line.
+    for (name, feature) in [
+        ("no-frontmatter", "# Feature\n"),
+        ("late-fence", "\n---\nid: fd-000002\n---\n"),
+    ] {
+        let run = check_feature(name, feature);
+        assert_eq!(run.stdout, "1 node: no problems\n", "{name}");
+        assert_eq!(run.code, 0, "{name}");
+    }
 }
 
 #[test]

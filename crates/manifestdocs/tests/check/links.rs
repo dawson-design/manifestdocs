@@ -76,3 +76,29 @@ fn checks_links_in_a_node_file_whose_frontmatter_never_closes() {
          \n1 node: 2 errors\n"
     );
 }
+
+#[test]
+fn skips_links_it_cant_check_and_reports_bad_encoding() {
+    let root = node_with_body(
+        "fd-000001",
+        "Demo",
+        "[bad](bad%FF.md)\n<https://example.com>\n<sam@example.com>\n[mail](mailto:sam@example.com)\n\
+         [cdn](//cdn.example.com/x.png)\n[raw](logo.png?raw=true)\n[top](#)\n[d][missing]\n\n\
+         ```\n[fenced](nope.md)\n```\n\n    [indented](nope.md)\n\n[unused]: nope.md\n",
+    );
+    let fixture = Fixture::new(
+        "links-skipped",
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("logo.png", "png"),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(
+        run.stdout,
+        "demo.md:9: error: broken link `bad%FF.md`\n\n1 node: 1 error\n"
+    );
+}
