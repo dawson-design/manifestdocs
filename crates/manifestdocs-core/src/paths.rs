@@ -108,10 +108,7 @@ mod tests {
             ("design/cli/cli.md", "design/cli/cli.md"),
             ("./design//cli/", "design/cli"),
             ("design/cli/../checks/checks.md", "design/checks/checks.md"),
-            (
-                "Universal Deduplicator/a b.md",
-                "Universal Deduplicator/a b.md",
-            ),
+            ("Kitchen Notes/a b.md", "Kitchen Notes/a b.md"),
         ];
         for (input, expected) in cases {
             assert_eq!(
