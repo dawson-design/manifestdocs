@@ -82,15 +82,21 @@ Paths in arguments and output are relative to the current folder. `check` exits 
 
 ## Use a tree from a code repo
 
-Commands find the tree by walking up from the current folder. From a code repo cloned beside the docs repo, map the workspace to the tree in `~/.config/manifestdocs/config.yaml`:
+Commands find the tree by walking up from the current folder to the repo root. When that finds none, they use the nearest `.manifestdocs/config.yaml` at or above the current folder, whose `tree` is relative to the folder holding `.manifestdocs/`.
+
+In a single repo whose tree is in `docs/`, commit this at the repo root:
 
 ```yaml
-workspaces:
-  - path: ~/work/cookbook
-    tree: ~/work/cookbook/cookbook-docs
+# .manifestdocs/config.yaml
+tree: docs
 ```
 
-When workspaces overlap, the longest path wins.
+In a workspace folder that holds the code repos and a docs repo, put one beside them:
+
+```yaml
+# ~/work/cookbook/.manifestdocs/config.yaml
+tree: cookbook-docs
+```
 
 ## Develop
 

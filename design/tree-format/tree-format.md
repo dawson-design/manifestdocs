@@ -9,7 +9,7 @@ summary: "How a docs repo marks a tree, its nodes, the files each node owns, and
 
 ## Root marker
 
-A `manifestdocs.yaml` file marks the root of a tree. It can go in any folder of a docs repo, and one repo can contain several trees. A `manifestdocs.yaml` inside an existing tree starts a separate tree, and the outer tree skips that folder. The tool locates the root by walking up from the current directory, then through the user configuration below.
+A `manifestdocs.yaml` file marks the root of a tree. It can go in any folder of a docs repo, and one repo can contain several trees. A `manifestdocs.yaml` inside an existing tree starts a separate tree, and the outer tree skips that folder. The tool locates the root by walking up from the current directory to the repo root, then through the nearest [pointer](#pointer).
 
 ```yaml
 # manifestdocs.yaml
@@ -24,22 +24,25 @@ statuses: [draft, approved]
 
 Only `name` is required. `merge` defaults to `review`, and `statuses` defaults to `[draft, approved]`. `superseded` is always a valid status, because the tool needs to know which status requires a replacement node, so `statuses` lists only the others. Without a `github` block, the tree commands still work and the work commands are off.
 
-## User configuration
+## Pointer
 
-Engineers usually work in a code repo cloned next to the docs repo, and walking up from there never reaches the root. A user-level file maps workspace folders to tree roots.
+Walking up never reaches the root when the tree is in a subfolder of the code repo, such as `docs/`, or in a docs repo cloned beside the code repos. A pointer file, `.manifestdocs/config.yaml`, names the tree for every folder under the folder it's in. `tree` is relative to that folder.
 
 ```yaml
-# ~/.config/manifestdocs/config.yaml
-workspaces:
-  - path: ~/work/cookbook                  # sessions anywhere under this folder
-    tree: ~/work/cookbook/cookbook-docs    # the folder with manifestdocs.yaml
+# cookbook/.manifestdocs/config.yaml: a single repo, committed
+tree: docs
 ```
 
-When workspace paths overlap, the longest match wins.
+```yaml
+# ~/work/cookbook/.manifestdocs/config.yaml: a workspace folder holding the code repos and the docs repo
+tree: cookbook-docs
+```
+
+The nearest pointer at or above the current folder wins, so a repo's own pointer comes before one in a folder above it. A `.manifestdocs/` folder without `config.yaml`, such as one holding only decision drafts, isn't a pointer. Whether the tree is in the working repo follows from where the pointer leads, and isn't a setting.
 
 ## Which version the tool reads
 
-Inside the docs clone, the tool reads the working tree, so authors see their edits and `check` validates the checked-out branch. The context header then shows the branch and any uncommitted changes, and warns when the clone isn't on its default branch. From any other repo, the tool reads the docs repo's default branch, which it resolves from `origin/HEAD`, so a docs clone left on a feature branch doesn't change an agent's context. When `origin/HEAD` is unset, the tool fails and prints the command that sets it, `git remote set-head origin --auto`, rather than guessing a branch name. The tool never fetches, so the header shows the commit and its date, and the ref is as current as the clone's last fetch. A `--ref` flag overrides both.
+Inside the docs clone, the tool reads the working tree, so authors see their edits and `check` validates the checked-out branch. When the tree is in the working repo, the working repo is the docs clone, so the tool always reads its working tree. The context header then shows the branch and any uncommitted changes, and warns when the clone isn't on its default branch. From any other repo, the tool reads the docs repo's default branch, which it resolves from `origin/HEAD`, so a docs clone left on a feature branch doesn't change an agent's context. When `origin/HEAD` is unset, the tool fails and prints the command that sets it, `git remote set-head origin --auto`, rather than guessing a branch name. The tool never fetches, so the header shows the commit and its date, and the ref is as current as the clone's last fetch. A `--ref` flag overrides both.
 
 ## Nodes
 

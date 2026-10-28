@@ -4,7 +4,7 @@
 
 Teams keep two kinds of knowledge in different places, and agents need both.
 
-- **Decisions live in docs.** PRDs, specs, design docs and ADRs sit in a separate docs repo. They change through reviewed commits, so their history is clear.
+- **Decisions live in docs.** PRDs, specs, design docs and ADRs sit in a docs repo, or in a docs folder of the code repo. They change through reviewed commits, so their history is clear.
 - **Work lives in issues.** Issues, often grouped under parents such as epics and initiatives, track who does what and when. No single issue, even a top-level one, can hold all the product and design decisions behind it. Edits to issue bodies and decisions made in comments leave no reviewable history.
 
 Agents fall into the gap between the two. An issue gives them the task without the reasoning. The docs repo gives them the reasoning without a way to find the part that matters. When a spec changes after someone plans an issue, nothing tells the agent or the reviewer. Decisions made in issue threads never reach the docs, so the next agent repeats the debate.

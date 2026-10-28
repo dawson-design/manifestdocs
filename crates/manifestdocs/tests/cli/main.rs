@@ -2,7 +2,7 @@
 
 mod check;
 mod init;
+mod pointer;
 mod show;
 mod support;
 mod tree;
-mod workspace;
