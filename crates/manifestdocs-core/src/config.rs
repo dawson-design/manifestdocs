@@ -92,6 +92,17 @@ impl TreeConfig {
 }
 
 impl TreeName {
+    /// The title in kebab case, such as `cookbook-docs` for `Cookbook Docs`. `None` when the
+    /// title has no letters or digits.
+    pub fn from_title(title: &str) -> Option<Self> {
+        let words: Vec<String> = title
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect();
+        (!words.is_empty()).then(|| Self(words.join("-")))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -244,6 +255,24 @@ mod tests {
     fn treats_a_blank_statuses_as_absent() {
         let config = parse("name: x\nstatuses:\n").unwrap();
         assert_eq!(status_names(&config), ["draft", "approved"]);
+    }
+
+    #[test]
+    fn makes_a_tree_name_from_a_title() {
+        let cases = [
+            ("Cookbook Docs", "cookbook-docs"),
+            ("cookbook", "cookbook"),
+            ("  Q&A: what's next? ", "q-a-what-s-next"),
+            ("../Café 2", "café-2"),
+        ];
+        for (title, name) in cases {
+            let made = TreeName::from_title(title).unwrap();
+            assert_eq!(made.as_str(), name, "{title}");
+            let config = parse(&format!("name: {name}\n")).unwrap();
+            assert_eq!(config.name, made, "{title}");
+        }
+        assert_eq!(TreeName::from_title(" -- "), None);
+        assert_eq!(TreeName::from_title(""), None);
     }
 
     #[test]
