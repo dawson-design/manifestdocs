@@ -73,7 +73,7 @@ enum Problem {
     SupersededWithoutReplacement, ReplacementWithoutSuperseded, SupersededBySelf,
     ReplacementNotFound(NodeId), NodeIdOutsideNodeFile(NodeId),
     BrokenLink(String), MissingAnchor(String),
-    NoRootNode, NestedTreeSkipped, UnknownField(String), NodeFileWithoutId,
+    NoRootNode { expected: TreePath }, NestedTreeSkipped, UnknownField(String), NodeFileWithoutId,
 }
 impl Problem { fn severity(&self) -> Severity { /* the last four are warnings */ } }
 ```
