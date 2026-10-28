@@ -1,11 +1,12 @@
 //! `manifestdocs.yaml`, the file that marks a tree's root.
 
 use serde::Deserialize;
-use serde_saphyr::{MessageFormatter, Spanned, UserMessageFormatter};
+use serde_saphyr::Spanned;
 use thiserror::Error;
 
 use crate::paths::TreePath;
 use crate::refs::{Host, RepoRef};
+use crate::yaml;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeConfig {
@@ -167,14 +168,10 @@ fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
     }
 }
 
-// The user formatter leaves out the location, which `line` already carries, and the
-// library's own setting names.
 fn yaml_error(error: serde_saphyr::Error) -> ConfigError {
     ConfigError {
-        line: error.location().and_then(|l| u32::try_from(l.line()).ok()),
-        message: UserMessageFormatter
-            .format_message(error.without_snippet())
-            .into_owned(),
+        line: yaml::error_line(&error),
+        message: yaml::error_message(&error),
     }
 }
 
