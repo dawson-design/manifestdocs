@@ -21,7 +21,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Validate the tree, exiting with 1 when it has errors
-    Check,
+    Check {
+        /// A file or folder: check the tree that contains it [default: the current folder]
+        path: Option<String>,
+    },
     /// Print an outline of the nodes, with their IDs, statuses and files
     Tree {
         /// A node file, or a folder whose nodes to outline
@@ -44,7 +47,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
-        Command::Check => check::run(),
+        Command::Check { path } => check::run(path.as_deref()),
         Command::Tree { path, depth } => tree::run(path.as_deref(), depth),
         Command::Show { node } => show::run(&node),
         Command::Init { title } => init::run(title.as_deref()),
