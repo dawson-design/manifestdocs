@@ -76,5 +76,6 @@ Both tools store work in the repo. Manifest Docs reads work from GitHub Issues a
 | Decisions recorded from sessions | Several a week in the personal factory; at least one a sprint per developer on the team pilot |
 | Agent runs whose context included a decision made in an earlier session | Rising month over month |
 | Proposed decisions reviewed within a week | 90% |
+| Changes run through verify before their PR | 80% in the personal factory within a month of M1 |
 | `mfd check` in docs repo CI | Running on every docs PR for both factories |
 | Time to build agent context | Under one second offline for a tree of 500 nodes |

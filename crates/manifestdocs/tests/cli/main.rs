@@ -3,6 +3,7 @@
 mod check;
 mod context;
 mod init;
+mod plugin;
 mod pointer;
 mod show;
 mod support;
