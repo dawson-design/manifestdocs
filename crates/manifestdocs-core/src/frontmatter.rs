@@ -12,8 +12,12 @@ pub const FIRST_YAML_LINE: u32 = 2;
 pub enum Split<'a> {
     /// The file has no frontmatter.
     Absent,
-    /// The file opens a block with `---` but never closes it.
-    Unclosed,
+    /// The file opens a block with `---` but never closes it. `keys` are the top-level keys
+    /// up to the first blank line, which is where a block whose closing line was deleted
+    /// usually ends, so the node's `id` is still known.
+    Unclosed {
+        keys: Vec<Key>,
+    },
     Present(Frontmatter<'a>),
 }
 
@@ -60,7 +64,15 @@ pub fn split(text: &str) -> Split<'_> {
         }
         offset += line.len();
     }
-    Split::Unclosed
+    let rest = &text[start..];
+    let block = rest.split_inclusive('\n');
+    let end = block
+        .take_while(|line| !line.trim().is_empty())
+        .map(str::len)
+        .sum();
+    Split::Unclosed {
+        keys: keys(&rest[..end]),
+    }
 }
 
 /// The Markdown after any frontmatter, and the file line it starts on. A block that never
@@ -68,7 +80,9 @@ pub fn split(text: &str) -> Split<'_> {
 pub fn body(text: &str) -> (&str, u32) {
     match split(text) {
         Split::Present(frontmatter) => (frontmatter.body, frontmatter.body_line),
-        Split::Absent | Split::Unclosed => (text.strip_prefix('\u{feff}').unwrap_or(text), 1),
+        Split::Absent | Split::Unclosed { .. } => {
+            (text.strip_prefix('\u{feff}').unwrap_or(text), 1)
+        }
     }
 }
 

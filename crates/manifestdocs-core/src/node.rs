@@ -93,9 +93,15 @@ pub fn read_node_file(
 ) -> Option<ParsedNode> {
     match frontmatter::split(text) {
         Split::Absent => None,
-        Split::Unclosed => {
+        // The scanned `id` keeps the node in the tree, so one deleted line doesn't hide it.
+        Split::Unclosed { keys } => {
             let problem = Problem::UnparsableFrontmatter("no closing `---` line".into());
-            Some(rejected(file, location, problem))
+            let rejected = rejected(file, location, problem);
+            Some(ParsedNode {
+                id: scanned_id(&keys),
+                keys,
+                ..rejected
+            })
         }
         Split::Present(frontmatter) => Some(parse_node(file, location, &frontmatter, config)),
     }
@@ -108,7 +114,7 @@ pub fn declared_id(frontmatter: &Frontmatter) -> Option<NodeId> {
             Some(Value::Text(text)) => NodeId::parse(text),
             _ => None,
         },
-        Err(_) => scanned_id(frontmatter),
+        Err(_) => scanned_id(&frontmatter.keys),
     }
 }
 
@@ -146,7 +152,7 @@ fn parse_node(
         Ok(values) => reader.fields(&values, location.clone(), config),
         Err(error) => {
             reader.unparsable(&error);
-            (scanned_id(frontmatter), None)
+            (scanned_id(&frontmatter.keys), None)
         }
     };
     ParsedNode {
@@ -160,8 +166,8 @@ fn parse_node(
 }
 
 // When the YAML doesn't parse, the scanned `id` still lets references to the node resolve.
-fn scanned_id(frontmatter: &Frontmatter) -> Option<NodeId> {
-    let key = frontmatter.key(Field::Id.name())?;
+fn scanned_id(keys: &[Key]) -> Option<NodeId> {
+    let key = keys.iter().find(|key| key.name == Field::Id.name())?;
     let without_comment = key.value.split(" #").next().unwrap_or_default();
     NodeId::parse(without_comment.trim().trim_matches(['"', '\'']))
 }

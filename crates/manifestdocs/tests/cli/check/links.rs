@@ -73,7 +73,7 @@ fn checks_links_in_a_node_file_whose_frontmatter_never_closes() {
         run.stdout,
         "feature/feature.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n\
          feature/feature.md:4: error: broken link `gone.md`\n\
-         \n1 node: 2 errors\n"
+         \n2 nodes: 2 errors\n"
     );
 }
 
