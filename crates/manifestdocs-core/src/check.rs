@@ -148,7 +148,7 @@ fn link_problem(
 
 // A link to an anchor in the same file names the file, so the message says where to look.
 fn shown_path(written: &str, file: &TreePath) -> String {
-    let path = written.split('#').next().unwrap_or_default();
+    let path = written.split(['#', '?']).next().unwrap_or_default();
     if path.is_empty() {
         file.file_name().to_owned()
     } else {

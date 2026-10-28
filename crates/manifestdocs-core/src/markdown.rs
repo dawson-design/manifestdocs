@@ -24,6 +24,8 @@ pub fn outline(body: &str, first_line: u32) -> Outline {
     let line_starts = line_starts(body);
     let mut outline = Outline::default();
     let mut heading: Option<String> = None;
+    // GitHub's anchor leaves out the alt text of an image in a heading.
+    let mut image_depth = 0;
     for (event, range) in Parser::new_ext(body, options()).into_offset_iter() {
         let line = first_line + line_index(&line_starts, range.start);
         match event {
@@ -31,18 +33,21 @@ pub fn outline(body: &str, first_line: u32) -> Outline {
                 link_type,
                 dest_url,
                 ..
-            })
-            | Event::Start(Tag::Image {
+            }) => {
+                outline.links.push(link(link_type, &dest_url, line));
+            }
+            Event::Start(Tag::Image {
                 link_type,
                 dest_url,
                 ..
-            }) => outline.links.push(Link {
-                target: target(link_type, &dest_url),
-                line,
-            }),
+            }) => {
+                image_depth += 1;
+                outline.links.push(link(link_type, &dest_url, line));
+            }
+            Event::End(TagEnd::Image) => image_depth -= 1,
             Event::Start(Tag::Heading { .. }) => heading = Some(String::new()),
             Event::End(TagEnd::Heading(_)) => outline.headings.extend(heading.take()),
-            Event::Text(text) | Event::Code(text) => {
+            Event::Text(text) | Event::Code(text) if image_depth == 0 => {
                 heading.iter_mut().for_each(|h| h.push_str(&text));
             }
             Event::Html(html) | Event::InlineHtml(html) => {
@@ -54,13 +59,37 @@ pub fn outline(body: &str, first_line: u32) -> Outline {
     outline
 }
 
+// `id` and `name` attributes in any case, with or without quotes, outside comments.
 fn html_anchors(html: &str) -> Vec<String> {
-    let starts = ["id=\"", "name=\""].into_iter().flat_map(|attribute| {
-        let found = html.match_indices(attribute);
-        found.map(move |(start, _)| start + attribute.len())
-    });
-    let values = starts.filter_map(|start| html[start..].split_once('"'));
-    values.map(|(value, _)| value.to_owned()).collect()
+    if html.trim_start().starts_with("<!--") {
+        return Vec::new();
+    }
+    let lower = html.to_ascii_lowercase();
+    let starts: Vec<usize> = ["id", "name"]
+        .into_iter()
+        .flat_map(|name| {
+            lower
+                .match_indices(name)
+                .map(move |(at, _)| (at, name.len()))
+        })
+        .filter(|(at, _)| lower[..*at].ends_with(char::is_whitespace))
+        .map(|(at, length)| at + length)
+        .collect();
+    starts
+        .into_iter()
+        .filter_map(|start| attribute_value(&html[start..]))
+        .collect()
+}
+
+fn attribute_value(rest: &str) -> Option<String> {
+    let rest = rest.trim_start().strip_prefix('=')?.trim_start();
+    let value = match rest.chars().next()? {
+        quote @ ('"' | '\'') => rest[1..].split(quote).next()?,
+        _ => rest
+            .split(|c: char| c.is_whitespace() || matches!(c, '>' | '/'))
+            .next()?,
+    };
+    Some(value.to_owned())
 }
 
 // GitHub renders tables, footnotes, strikethrough and task lists, which change what counts
@@ -72,11 +101,12 @@ fn options() -> Options {
         | Options::ENABLE_TASKLISTS
 }
 
-fn target(link_type: LinkType, dest_url: &str) -> String {
-    match link_type {
+fn link(link_type: LinkType, dest_url: &str, line: u32) -> Link {
+    let target = match link_type {
         LinkType::Email => format!("mailto:{dest_url}"),
         _ => dest_url.to_owned(),
-    }
+    };
+    Link { target, line }
 }
 
 fn line_starts(text: &str) -> Vec<usize> {
@@ -123,19 +153,21 @@ mod tests {
     }
 
     #[test]
-    fn collects_html_id_and_name_values_as_anchors() {
-        let body = "<a id=\"step-one\"></a>\n\nText with <span name=\"two\">x</span>.\n";
+    fn collects_html_id_and_name_attributes_as_anchors() {
+        let body = "<a id=\"step-one\"></a>\n\nText with <span name='two'>x</span> and \
+                    <a ID=three>y</a>.\n\n<div data-id=\"no\"></div>\n\n<!-- id=\"hidden\" -->\n";
 
-        assert_eq!(outline(body, 1).html_anchors, ["step-one", "two"]);
+        assert_eq!(outline(body, 1).html_anchors, ["step-one", "two", "three"]);
     }
 
     #[test]
-    fn reads_heading_text_including_code_and_setext_headings() {
-        let body = "# Write `path`\n\nSetext heading\n---\n\n## A & B\n";
+    fn reads_heading_text_without_image_alt_text() {
+        let body =
+            "# Write `path`\n\nSetext heading\n---\n\n## A & B\n\n# ![logo](logo.png) Project\n";
 
         assert_eq!(
             outline(body, 1).headings,
-            ["Write path", "Setext heading", "A & B"]
+            ["Write path", "Setext heading", "A & B", " Project"]
         );
     }
 }

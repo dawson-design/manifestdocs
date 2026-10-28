@@ -38,8 +38,11 @@ pub fn resolve(target: &str, from: &RepoPath) -> Option<LinkTarget> {
         Some((path, anchor)) => (path, Some(anchor)),
         None => (target, None),
     };
-    let path = path.split_once('?').map_or(path, |(path, _)| path);
-    let anchor = match anchor.filter(|anchor| !anchor.is_empty()) {
+    let (path, query) = path.split_once('?').unwrap_or((path, ""));
+    // `?plain=1#L2` points at a line of the file's source view, not a heading.
+    let source_view = query.split('&').any(|part| part == "plain=1");
+    let anchor = anchor.filter(|anchor| !anchor.is_empty() && !source_view);
+    let anchor = match anchor {
         Some(anchor) => Some(decode(anchor)?),
         None => None,
     };
@@ -145,6 +148,7 @@ mod tests {
                 "diagram.svg?raw=true",
                 local("docs/search/diagram.svg", None),
             ),
+            ("notes.md?plain=1#L2", local("docs/search/notes.md", None)),
             ("../../../outside.md", None),
             ("bad%FF.md", None),
         ];

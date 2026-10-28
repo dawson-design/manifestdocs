@@ -16,12 +16,24 @@ fn reports_anchors_that_match_no_heading_inside_and_outside_the_tree() {
          [repeat](search/search.md#notes-1)\n\
          [source](../src/main.rs#L10)\n\
          [record](search/decisions/2026-10-28-engine.md#decision)\n\
-         [nested](vendor/guide.md#setup)\n"
+         [nested](vendor/guide.md#setup)\n\
+         [nested-missing](vendor/guide.md#nowhere)\n\
+         [record-missing](search/decisions/2026-10-28-engine.md#why)\n\
+         [image-heading](search/search.md#-project)\n\
+         [single-quoted](search/search.md#two)\n\
+         [unquoted](search/search.md#three)\n\
+         [data-attribute](search/search.md#four)\n\
+         [comment](search/search.md#five)\n\
+         [source-line](search/search.md?plain=1#L2)\n"
     );
     let search = format!(
         "{}{}",
         node("fd-000002", "Search"),
-        "\n## Write path\n\n<a id=\"step-one\"></a>\n\n## Notes\n\n## Notes\n"
+        "\n## Write path\n\n<a id=\"step-one\"></a>\n\n## Notes\n\n## Notes\n\n\
+         # ![logo](logo.png) Project\n\n\
+         <span name='two'>x</span> <a ID=three>y</a>\n\n\
+         <div data-id=\"four\"></div>\n\n\
+         <!-- id=\"five\" -->\n"
     );
     let fixture = Fixture::new(
         "anchors",
@@ -31,6 +43,7 @@ fn reports_anchors_that_match_no_heading_inside_and_outside_the_tree() {
             ("docs/manifestdocs.yaml", "name: demo\n"),
             ("docs/demo.md", &root),
             ("docs/search/search.md", &search),
+            ("docs/search/logo.png", "png"),
             (
                 "docs/search/decisions/2026-10-28-engine.md",
                 "---\nid: dc-0000001\n---\n\n## Decision\n",
@@ -48,8 +61,12 @@ fn reports_anchors_that_match_no_heading_inside_and_outside_the_tree() {
          demo.md:11: error: no heading `#read-path` in `search/search.md`\n\
          demo.md:13: error: no heading `#nowhere` in `demo.md`\n\
          demo.md:15: error: no heading `#cost` in `../adr/0001-engine.md`\n\
+         demo.md:21: error: no heading `#nowhere` in `vendor/guide.md`\n\
+         demo.md:22: error: no heading `#why` in `search/decisions/2026-10-28-engine.md`\n\
+         demo.md:26: error: no heading `#four` in `search/search.md`\n\
+         demo.md:27: error: no heading `#five` in `search/search.md`\n\
          vendor/: warning: skipped nested tree\n\
-         \n2 nodes: 4 errors, 1 warning\n"
+         \n2 nodes: 8 errors, 1 warning\n"
     );
     assert_eq!(run.code, 1);
 }
