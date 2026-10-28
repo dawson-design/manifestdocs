@@ -117,3 +117,4 @@ The types can't express these, so `check` does.
 - Anchors must match a heading's GitHub slug exactly. Supersession cycles aren't detected.
 - When workspace paths in the user config overlap, the longest match wins.
 - Link paths are repo paths, not tree paths, because a link can leave the tree, such as a link to an ADR folder next to it.
+- The snapshot lists what GitHub shows: dotfiles are in, files the repo's `.gitignore` files exclude are out, and nested repos and submodules are skipped. A tracked file that matches `.gitignore` is missed until M2 reads git's index.

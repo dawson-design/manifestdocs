@@ -5,16 +5,25 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use ignore::WalkBuilder;
-use manifestdocs_core::check::Snapshot;
+use ignore::{DirEntry, WalkBuilder};
+use manifestdocs_core::check::{Snapshot, markdown_to_read};
+use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::paths::RepoPath;
 
 use crate::locate::Roots;
+use crate::report::relative;
 
-pub fn snapshot(roots: &Roots) -> Result<Snapshot> {
-    let tree_root = repo_path(&roots.repo_root, &roots.tree_root)?;
+pub fn snapshot(roots: &Roots, config: &TreeConfig, cwd: &Path) -> Result<Snapshot> {
+    let tree_root = repo_path(&roots.repo_root, &roots.tree_root)
+        .context("the tree's folder path isn't UTF-8")?;
     let paths = list_files(&roots.repo_root)?;
-    let markdown = read_markdown(&roots.repo_root, &paths, &tree_root)?;
+    let mut markdown = BTreeMap::new();
+    for path in markdown_to_read(config, &tree_root, &paths) {
+        let file = roots.repo_root.join(path.as_str());
+        let text = fs::read_to_string(&file)
+            .with_context(|| format!("can't read {} as UTF-8 text", relative(&file, cwd)))?;
+        markdown.insert(path, text);
+    }
     Ok(Snapshot {
         tree_root,
         paths,
@@ -22,43 +31,42 @@ pub fn snapshot(roots: &Roots) -> Result<Snapshot> {
     })
 }
 
-// GitHub shows dotfiles and ignores a user's global gitignore, so the walk does too.
+// GitHub shows dotfiles and applies only the repo's own .gitignore files, so the walk does
+// the same. A folder with its own .git is a nested repo or submodule, which GitHub shows as
+// a pointer rather than files.
 fn list_files(repo_root: &Path) -> Result<BTreeSet<RepoPath>> {
+    let root = repo_root.to_path_buf();
     let walk = WalkBuilder::new(repo_root)
         .hidden(false)
+        .ignore(false)
+        .parents(false)
         .git_global(false)
-        .filter_entry(|entry| entry.file_name() != ".git")
+        .git_exclude(false)
+        .filter_entry(move |entry| !is_git_folder(entry) && !is_nested_repo(entry, &root))
         .build();
     let mut paths = BTreeSet::new();
     for entry in walk {
         let entry = entry?;
-        if entry.file_type().is_some_and(|kind| kind.is_file()) {
-            paths.insert(repo_path(repo_root, entry.path())?);
-        }
+        let is_file = entry.file_type().is_some_and(|kind| kind.is_file());
+        // A file name that isn't UTF-8 can't be a node or a link target, so it's skipped.
+        paths.extend(
+            is_file
+                .then(|| repo_path(repo_root, entry.path()))
+                .flatten(),
+        );
     }
     Ok(paths)
 }
 
-fn read_markdown(
-    repo_root: &Path,
-    paths: &BTreeSet<RepoPath>,
-    tree_root: &RepoPath,
-) -> Result<BTreeMap<RepoPath, String>> {
-    paths
-        .iter()
-        .filter(|path| path.as_str().ends_with(".md") && path.in_tree(tree_root).is_some())
-        .map(|path| {
-            let text = fs::read_to_string(repo_root.join(path.as_str()))
-                .with_context(|| format!("can't read {path} as UTF-8 text"))?;
-            Ok((path.clone(), text))
-        })
-        .collect()
+fn is_git_folder(entry: &DirEntry) -> bool {
+    entry.file_name() == ".git"
 }
 
-fn repo_path(repo_root: &Path, path: &Path) -> Result<RepoPath> {
-    let relative = path.strip_prefix(repo_root)?;
-    let text = relative
-        .to_str()
-        .with_context(|| format!("{} isn't a UTF-8 path", path.display()))?;
-    RepoPath::new(text).with_context(|| format!("{text} is outside the repo"))
+fn is_nested_repo(entry: &DirEntry, repo_root: &Path) -> bool {
+    let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
+    is_dir && entry.path() != repo_root && entry.path().join(".git").exists()
+}
+
+fn repo_path(repo_root: &Path, path: &Path) -> Option<RepoPath> {
+    RepoPath::new(path.strip_prefix(repo_root).ok()?.to_str()?)
 }

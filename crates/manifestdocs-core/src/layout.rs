@@ -1,9 +1,10 @@
-//! Sorts a tree's files by where they are: node files and nested trees.
+//! Sorts a tree's files by where they are: node files, nested trees and Markdown.
 
-use crate::check::Snapshot;
+use std::collections::BTreeSet;
+
 use crate::config::{self, TreeConfig};
 use crate::node::NodeLocation;
-use crate::paths::TreePath;
+use crate::paths::{RepoPath, TreePath};
 
 /// A folder named this holds decision records, so it and everything under it is never a node.
 const RECORDS_FOLDER: &str = "decisions";
@@ -14,6 +15,8 @@ pub struct Layout {
     pub node_files: Vec<NodeFile>,
     /// The outermost folders under the root that start their own tree.
     pub nested_trees: Vec<TreePath>,
+    /// Markdown in this tree, outside nested trees, including decision records.
+    pub markdown: Vec<TreePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,17 +25,16 @@ pub struct NodeFile {
     pub location: NodeLocation,
 }
 
-pub fn layout(config: &TreeConfig, snapshot: &Snapshot) -> Layout {
-    let files: Vec<TreePath> = snapshot
-        .paths
-        .iter()
-        .filter_map(|path| path.in_tree(&snapshot.tree_root))
+pub fn layout(config: &TreeConfig, tree_root: &RepoPath, paths: &BTreeSet<RepoPath>) -> Layout {
+    let in_tree: Vec<TreePath> = paths.iter().filter_map(|p| p.in_tree(tree_root)).collect();
+    let nested_trees = nested_trees(&in_tree);
+    let files: Vec<TreePath> = in_tree
+        .into_iter()
+        .filter(|file| !nested_trees.iter().any(|tree| file.is_within(tree)))
         .collect();
-    let nested_trees = nested_trees(&files);
     let root_file = config.root_node_file();
     let node_files = files
         .iter()
-        .filter(|file| !nested_trees.iter().any(|tree| file.is_within(tree)))
         .filter(|file| !in_records_folder(file))
         .filter_map(|file| {
             let location = node_location(file, &root_file)?;
@@ -42,9 +44,14 @@ pub fn layout(config: &TreeConfig, snapshot: &Snapshot) -> Layout {
             })
         })
         .collect();
+    let markdown = files
+        .into_iter()
+        .filter(|file| file.as_str().ends_with(".md"))
+        .collect();
     Layout {
         node_files,
         nested_trees,
+        markdown,
     }
 }
 

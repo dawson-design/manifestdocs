@@ -34,8 +34,21 @@ impl Report {
     }
 }
 
+/// The Markdown files `check` reads: every one in the tree, outside nested trees.
+pub fn markdown_to_read(
+    config: &TreeConfig,
+    tree_root: &RepoPath,
+    paths: &BTreeSet<RepoPath>,
+) -> Vec<RepoPath> {
+    let layout = layout(config, tree_root, paths);
+    let markdown = layout.markdown.iter();
+    markdown
+        .filter_map(|file| tree_root.join(file.as_str()))
+        .collect()
+}
+
 pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
-    let layout = layout(config, snapshot);
+    let layout = layout(config, &snapshot.tree_root, &snapshot.paths);
     let mut findings = layout_findings(config, &layout);
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
