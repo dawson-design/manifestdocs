@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::id::NodeId;
 use crate::paths::TreePath;
+use crate::tokens::grouped;
 
 /// One problem in one file. `file` can name a folder, such as a skipped nested tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +66,11 @@ pub enum Problem {
     NestedTreeSkipped,
     UnknownField(String),
     NodeFileWithoutId,
+    /// The node's body is estimated at `tokens`, over the tree's `node_tokens`.
+    NodeTooLarge {
+        tokens: u32,
+        limit: u32,
+    },
 }
 
 impl Problem {
@@ -73,7 +79,8 @@ impl Problem {
             Self::NoRootNode { .. }
             | Self::NestedTreeSkipped
             | Self::UnknownField(_)
-            | Self::NodeFileWithoutId => Severity::Warning,
+            | Self::NodeFileWithoutId
+            | Self::NodeTooLarge { .. } => Severity::Warning,
             Self::UnparsableFrontmatter(_)
             | Self::MissingField(_)
             | Self::EmptyField(_)
@@ -193,6 +200,12 @@ impl fmt::Display for Problem {
             Self::NestedTreeSkipped => f.write_str("skipped nested tree"),
             Self::UnknownField(name) => write!(f, "unknown field `{name}`"),
             Self::NodeFileWithoutId => f.write_str("node file has frontmatter but no `id`"),
+            Self::NodeTooLarge { tokens, limit } => write!(
+                f,
+                "node body is about {} tokens, over `node_tokens` ({}); split it into child nodes",
+                grouped(*tokens),
+                grouped(*limit)
+            ),
         }
     }
 }

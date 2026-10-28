@@ -236,3 +236,40 @@ fn reports_a_blank_value_once_and_accepts_a_value_on_the_next_line() {
         "feature/feature.md:3: error: `title` is empty\n\n2 nodes: 1 error\n"
     );
 }
+
+#[test]
+fn warns_about_a_node_body_over_the_size_limit() {
+    let frontmatter = "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n\n";
+    // 7,500 characters estimate at 2,500 tokens, the default limit; one more goes over.
+    let at_limit = format!("{frontmatter}{}\n", "x".repeat(7_500));
+    let over = format!("{frontmatter}{}\n", "x".repeat(7_501));
+
+    let fine = check_feature("size-at-limit", &at_limit);
+    let large = check_feature("size-over", &over);
+
+    assert_eq!(fine.stdout, "2 nodes: no problems\n");
+    assert_eq!(
+        large.stdout,
+        "feature/feature.md: warning: node body is about 2,501 tokens, over `node_tokens` (2,500); split it into child nodes\n\n2 nodes: 1 warning\n"
+    );
+    assert_eq!(large.code, 0);
+}
+
+#[test]
+fn takes_the_size_limit_from_the_config() {
+    let root = node("fd-000001", "Demo");
+    let fixture = Fixture::new(
+        "size-configured",
+        &[
+            ("manifestdocs.yaml", "name: demo\nnode_tokens: 1\n"),
+            ("demo.md", &root),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(
+        run.stdout,
+        "demo.md: warning: node body is about 2 tokens, over `node_tokens` (1); split it into child nodes\n\n1 node: 1 warning\n"
+    );
+}

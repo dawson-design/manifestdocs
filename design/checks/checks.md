@@ -17,4 +17,5 @@ summary: "Validates a tree and its decision records, so `check` can gate docs PR
 - At most one accepted decision per `topic` within a node.
 - With GitHub access, every referenced issue exists, and issues that name a node point to one that exists.
 - Warnings: a tree with no root node, one line for each nested tree it skipped, unknown fields in a node's frontmatter, and a file in a node file's position with frontmatter but no `id`.
+- From M1, a warning for each node with child nodes whose body is over `node_tokens` in `manifestdocs.yaml`, 2,500 by default, estimated as the [context budget](../context/context.md) estimates tokens. `context` includes the target node and its ancestors in full, so a large ancestor grows the context of every node below it. A node with no child nodes is loaded in full only as the target, so a complex feature there can be as long as it needs. The warning gives the node's estimated size and suggests moving detail into child nodes or a linked supporting doc.
 - Optional: issue bodies that copy long passages of spec text instead of linking to the node.
