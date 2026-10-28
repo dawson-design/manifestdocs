@@ -12,7 +12,7 @@ summary: "The commands, and their text and JSON output."
 | Command | Purpose | Needs GitHub |
 |---|---|---|
 | `mfd tree [path] [--depth n]` | Outline of nodes with status | No |
-| `mfd show <id or path>` | One node in full, with supporting docs listed | No |
+| `mfd show <id or path>` | One node in full, with supporting docs listed. From M2, a `dc-` ID shows one decision record in full, with the chain of records it supersedes | No |
 | `mfd context <id or path>` | Node and its ancestors in full, linked docs, child summaries | No |
 | `mfd context <issue-ref>` | Issue, summaries of its parent chain, linked node context | Yes |
 | `mfd check [path] [--strict]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md) | No |

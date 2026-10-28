@@ -36,6 +36,8 @@ supersedes: null
 
 `decided_by` is optional, for teams whose records don't name people. `source` lists issues and pull requests, never harness session IDs. `applies_to` lists the code a decision affects, as `repo:path` text or links for readers, and the tool doesn't check it.
 
+A record captures one choice in a few lines. `check` warns when its body is over 300 estimated tokens, counted as `context` counts them: a choice that needs more is a spec change or an [ADR](#promotion).
+
 ## What counts as significant
 
 The `manifestdocs-decide` skill gives agents a short test. Record a decision when the engineer:
@@ -51,6 +53,10 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 ## Capture
 
 **During a session.** When the engineer makes a call that passes the test, the agent drafts a record and asks the engineer to confirm, edit or drop it. On confirmation, the agent runs `mfd decide`. When a record names a decider, it's the engineer; the agent is never the decider.
+
+When a decision changes what a feature does, the agent also edits the node's requirements in the same docs PR. The spec then states the behaviour, and the record keeps the why and the rejected options. A record that supersedes another names the old choice under **Rejected**, with the reason it was dropped.
+
+A decision that applies to several nodes goes on their nearest common ancestor, which `context` loads for each of them. One that applies to no node goes on the root node.
 
 **At the end of a session.** A plugin hook prompts the agent once, before the session ends, to review the session and propose any decisions it missed. This catches decisions before the transcript is compacted or closed.
 
@@ -80,13 +86,11 @@ The personal factory can use `merge: proposed` for speed. A team whose changes n
 
 ## Read path
 
-Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors, newest first, inside the token budget. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out unless asked for. A rejected record still prevents the next session from proposing the same idea without a new reason.
+Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out unless asked for. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
+
+Each decision takes one line in `context`: its ID, status and title, and the first sentence of its **Why.** paragraph. When a record supersedes another, its line ends with the older record's ID and title, as `Supersedes dc-1a7f3b4: <title>`. The tool reads these from the older file, so nothing is stored twice. Only the immediate predecessor appears, and `mfd show <dc-id>` prints a record in full with the chain it supersedes. Each node's decisions go into the budget right after the node, newest first, so trimming drops the oldest decisions of the farthest ancestors first. A record's length doesn't change its cost in context, so a node can gather many decisions without crowding out its spec.
 
 ## Promotion
 
 When a decision changes an approved spec or spans several nodes, the agent drafts an ADR from the record, in the docs repo's own ADR format. Once the ADR merges, the record links to it and its status becomes `superseded`.
 
-## Open questions
-
-- How should the agent choose a node when a session decision applies to none, or to several?
-- Should a rejected decision have an expiry date, so a team can revisit it without a new reason after some time?

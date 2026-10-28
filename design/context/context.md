@@ -7,7 +7,7 @@ summary: "Assembles a node's or an issue's context for a coding agent within an 
 
 # Agent context
 
-`mfd context --format md --budget <tokens>` writes context for agents. The budget is approximate. The tool estimates tokens as characters divided by three and reserves 10% headroom. That overestimates for tokenizers near four characters per token, and allows for newer tokenizers, such as recent Claude models', that produce more tokens for the same text. It fills the budget in this order: the target node in full, its ancestors in full from the parent up to the root node, linked docs, the issue, then child summaries. Ancestors go in full because each states rules that apply to everything below it, such as a game's core rules at the root or a constraint shared by every search filter. In a well-decomposed tree they stay small, and `check` warns about [nodes over the size limit](../checks/checks.md). The tool trims from the end and lists what it left out by path, so an agent can read it. A piece that doesn't fit is left out while later, smaller pieces still go in, and the target node always goes in, even past the budget. Without `--budget`, nothing is trimmed. Either way, the output ends with its estimated size, and the plugin's hooks and skills always pass a budget.
+`mfd context --format md --budget <tokens>` writes context for agents. The budget is approximate. The tool estimates tokens as characters divided by three and reserves 10% headroom. That overestimates for tokenizers near four characters per token, and allows for newer tokenizers, such as recent Claude models', that produce more tokens for the same text. It fills the budget in this order: the target node in full, its ancestors in full from the parent up to the root node, linked docs, the issue, then child summaries. From M2, each node's [decisions](../decision-records/decision-records.md#read-path) follow it, one line each. Ancestors go in full because each states rules that apply to everything below it, such as a game's core rules at the root or a constraint shared by every search filter. In a well-decomposed tree they stay small, and `check` warns about [nodes over the size limit](../checks/checks.md). The tool trims from the end and lists what it left out by path, so an agent can read it. A piece that doesn't fit is left out while later, smaller pieces still go in, and the target node always goes in, even past the budget. Without `--budget`, nothing is trimmed. Either way, the output ends with its estimated size, and the plugin's hooks and skills always pass a budget.
 
 ## Linked docs
 
@@ -43,6 +43,7 @@ Path: recipes
 ## Decisions
 - dc-3f1a8c2 (accepted): Search results show 20 recipes per page. Readers rarely scroll past 20 before refining a search.
 - dc-8b07e15 (proposed): Filters apply as the reader picks them, not on submit.
+- dc-5d2c9e0 (accepted): Filters show how many recipes each option leaves. Readers stopped picking filters that emptied the list. Supersedes dc-1a7f3b4: Filters hide options with no results
 
 ## Linked docs
 ### adr/2026-09-search-engine.md
