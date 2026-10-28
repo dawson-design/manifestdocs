@@ -1,5 +1,6 @@
 mod check;
 mod files;
+mod init;
 mod locate;
 mod report;
 mod show;
@@ -34,6 +35,11 @@ enum Command {
         /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
         node: String,
     },
+    /// Start a tree here: write manifestdocs.yaml and a root node
+    Init {
+        /// The project's title; the tree's name is the title in kebab case [default: this folder's name]
+        title: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -41,6 +47,7 @@ fn main() -> ExitCode {
         Command::Check => check::run(),
         Command::Tree { path, depth } => tree::run(path.as_deref(), depth),
         Command::Show { node } => show::run(&node),
+        Command::Init { title } => init::run(title.as_deref()),
     };
     result.unwrap_or_else(|error| {
         eprintln!("error: {error:#}");
