@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use manifestdocs_core::config;
+use manifestdocs_core::paths::TreePath;
 use manifestdocs_core::workspace::{self, AbsPath, Workspace, workspace_for};
 
 pub struct Roots {
@@ -100,6 +101,19 @@ fn shown(path: &Path, home: &Path) -> String {
         Ok(rest) => format!("~/{}", rest.display()),
         Err(_) => path.display().to_string(),
     }
+}
+
+/// `arg`, a path from the current folder to a file or folder that exists, as a path in the tree.
+pub fn tree_path(arg: &str, cwd: &Path, tree_root: &Path) -> Result<TreePath> {
+    let path = fs::canonicalize(cwd.join(arg)).map_err(|_| anyhow!("no file or folder `{arg}`"))?;
+    let root = fs::canonicalize(tree_root).context("can't read the tree's folder")?;
+    let inside = path
+        .strip_prefix(&root)
+        .map_err(|_| anyhow!("`{arg}` is outside the tree"))?;
+    inside
+        .to_str()
+        .and_then(TreePath::new)
+        .ok_or_else(|| anyhow!("`{arg}` isn't a UTF-8 path"))
 }
 
 // Without a repo, the tree root is the boundary for link checks.

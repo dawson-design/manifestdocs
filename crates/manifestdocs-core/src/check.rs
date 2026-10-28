@@ -56,7 +56,7 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     let nodes: Vec<ParsedNode> = layout
         .node_files
         .iter()
-        .filter_map(|file| read(config, snapshot, file))
+        .filter_map(|file| read_node(config, snapshot, file))
         .collect();
     let mut findings = layout_findings(config, &layout, &nodes);
     findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
@@ -70,7 +70,11 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     }
 }
 
-fn read(config: &TreeConfig, snapshot: &Snapshot, file: &NodeFile) -> Option<ParsedNode> {
+pub(crate) fn read_node(
+    config: &TreeConfig,
+    snapshot: &Snapshot,
+    file: &NodeFile,
+) -> Option<ParsedNode> {
     let text = markdown(snapshot, &file.path)?;
     read_node_file(&file.path, file.location.clone(), text, config)
 }
