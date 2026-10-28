@@ -85,7 +85,7 @@ fn reports_each_frontmatter_problem_at_its_line() {
         (
             "unclosed",
             "---\nid: fd-000002\ntitle: \"Feature\"\n\n# Feature\n",
-            "feature/feature.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n\n1 node: 1 error\n",
+            "feature/feature.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n\n2 nodes: 1 error\n",
         ),
     ];
     for (name, feature, expected) in cases {

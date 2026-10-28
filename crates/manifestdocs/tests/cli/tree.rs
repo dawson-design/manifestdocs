@@ -159,3 +159,36 @@ fn stops_when_the_start_isnt_a_node_or_folder_in_the_tree() {
         assert_eq!(run.code, 2, "{start}");
     }
 }
+
+#[test]
+fn keeps_nodes_with_broken_frontmatter_in_place() {
+    // The root's title is unquoted, and the Recipes block never closes.
+    let root = "---\nid: fd-000001\ntitle: Cookbook\nstatus: draft\nsummary: \"Recipes.\"\n---\n";
+    let recipes = "---\nid: fd-000002\ntitle: \"Recipes\"\nstatus: draft\nsummary: \"All recipes.\"\n\n# Recipes\n";
+    let search = node("fd-000003", "Search");
+    let fixture = Fixture::new(
+        "tree-broken",
+        &[
+            ("manifestdocs.yaml", "name: cookbook\n"),
+            ("cookbook.md", root),
+            ("recipes/recipes.md", recipes),
+            ("recipes/notes.md", "# Notes\n"),
+            ("recipes/search/search.md", &search),
+        ],
+    );
+
+    let tree = fixture.run("", &["tree"]);
+    let show = fixture.run("", &["show", "recipes"]);
+
+    assert_eq!(
+        tree.stdout,
+        "cookbook (fd-000001, has problems)  cookbook.md\n\
+         \x20 recipes (fd-000002, has problems)  recipes/recipes.md\n\
+         \x20   Search (fd-000003, draft)  recipes/search/search.md\n"
+    );
+    assert_eq!(
+        show.stdout,
+        "recipes/recipes.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n"
+    );
+    assert_eq!(show.code, 1);
+}
