@@ -181,11 +181,22 @@ fn resolved_links(snapshot: &Snapshot, file: &TreePath) -> Vec<(Link, Option<Lin
 }
 
 // `context` includes a node and every ancestor in full, so a large node grows the context
-// of every node below it.
+// of every node below it. A node with no child nodes is loaded in full only as the target.
 fn oversized_nodes(config: &TreeConfig, snapshot: &Snapshot, nodes: &[ParsedNode]) -> Vec<Finding> {
     let limit = config.node_tokens.get();
-    let nodes = nodes.iter().filter(|node| node.id.is_some());
+    let folders: Vec<TreePath> = nodes
+        .iter()
+        .filter(|node| node.id.is_some())
+        .map(|node| node.location.folder())
+        .collect();
+    let has_children = |node: &&ParsedNode| {
+        let folder = node.location.folder();
+        folders.iter().any(|other| other.is_within(&folder))
+    };
     nodes
+        .iter()
+        .filter(|node| node.id.is_some())
+        .filter(has_children)
         .filter_map(|node| {
             let (body, _) = frontmatter::body(markdown(snapshot, &node.file)?);
             let tokens = estimate(body.trim());

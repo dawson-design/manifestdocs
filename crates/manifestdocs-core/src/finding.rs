@@ -66,7 +66,7 @@ pub enum Problem {
     NestedTreeSkipped,
     UnknownField(String),
     NodeFileWithoutId,
-    /// The node's body is estimated at `tokens`, over the tree's `node_tokens`.
+    /// A node with child nodes has a body estimated at `tokens`, over the tree's `node_tokens`.
     NodeTooLarge {
         tokens: u32,
         limit: u32,
@@ -202,7 +202,7 @@ impl fmt::Display for Problem {
             Self::NodeFileWithoutId => f.write_str("node file has frontmatter but no `id`"),
             Self::NodeTooLarge { tokens, limit } => write!(
                 f,
-                "node body is about {} tokens, over `node_tokens` ({}); split it into child nodes",
+                "node body is about {} tokens, over `node_tokens` ({}); move detail into child nodes or a linked supporting doc",
                 grouped(*tokens),
                 grouped(*limit)
             ),

@@ -238,21 +238,48 @@ fn reports_a_blank_value_once_and_accepts_a_value_on_the_next_line() {
 }
 
 #[test]
-fn warns_about_a_node_body_over_the_size_limit() {
+fn warns_about_a_node_with_child_nodes_over_the_size_limit() {
     let frontmatter = "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n\n";
     // 7,500 characters estimate at 2,500 tokens, the default limit; one more goes over.
     let at_limit = format!("{frontmatter}{}\n", "x".repeat(7_500));
     let over = format!("{frontmatter}{}\n", "x".repeat(7_501));
+    let child = node("fd-000003", "Part");
 
-    let fine = check_feature("size-at-limit", &at_limit);
-    let large = check_feature("size-over", &over);
+    let fine = check_parent("size-at-limit", &at_limit, &child);
+    let large = check_parent("size-over", &over, &child);
 
-    assert_eq!(fine.stdout, "2 nodes: no problems\n");
+    assert_eq!(fine.stdout, "3 nodes: no problems\n");
     assert_eq!(
         large.stdout,
-        "feature/feature.md: warning: node body is about 2,501 tokens, over `node_tokens` (2,500); split it into child nodes\n\n2 nodes: 1 warning\n"
+        "feature/feature.md: warning: node body is about 2,501 tokens, over `node_tokens` (2,500); move detail into child nodes or a linked supporting doc\n\n3 nodes: 1 warning\n"
     );
     assert_eq!(large.code, 0);
+}
+
+#[test]
+fn allows_a_node_with_no_child_nodes_over_the_size_limit() {
+    let frontmatter = "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n\n";
+    let over = format!("{frontmatter}{}\n", "x".repeat(7_501));
+
+    let run = check_feature("size-leaf", &over);
+
+    assert_eq!(run.stdout, "2 nodes: no problems\n");
+    assert_eq!(run.code, 0);
+}
+
+/// Checks a tree with a valid root node, `feature/feature.md` and its child `feature/part/part.md`.
+fn check_parent(name: &str, feature: &str, child: &str) -> Run {
+    let root = node("fd-000001", "Demo");
+    let fixture = Fixture::new(
+        name,
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("feature/feature.md", feature),
+            ("feature/part/part.md", child),
+        ],
+    );
+    fixture.check("")
 }
 
 #[test]
@@ -263,6 +290,7 @@ fn takes_the_size_limit_from_the_config() {
         &[
             ("manifestdocs.yaml", "name: demo\nnode_tokens: 1\n"),
             ("demo.md", &root),
+            ("feature/feature.md", &node("fd-000002", "Feature")),
         ],
     );
 
@@ -270,6 +298,6 @@ fn takes_the_size_limit_from_the_config() {
 
     assert_eq!(
         run.stdout,
-        "demo.md: warning: node body is about 2 tokens, over `node_tokens` (1); split it into child nodes\n\n1 node: 1 warning\n"
+        "demo.md: warning: node body is about 2 tokens, over `node_tokens` (1); move detail into child nodes or a linked supporting doc\n\n2 nodes: 1 warning\n"
     );
 }
