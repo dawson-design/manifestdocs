@@ -7,7 +7,7 @@ use serde::de::IgnoredAny;
 
 use crate::config::{SUPERSEDED, StatusName, TreeConfig};
 use crate::finding::{Field, Finding, Problem};
-use crate::frontmatter::{self, FIRST_YAML_LINE, Frontmatter, Split};
+use crate::frontmatter::{self, FIRST_YAML_LINE, Frontmatter, Key, Split};
 use crate::id::NodeId;
 use crate::paths::TreePath;
 use crate::refs::{IssueRef, RepoRef};
@@ -45,11 +45,22 @@ pub struct NonEmptyString(String);
 /// A file in a node file's position, read whether or not its frontmatter is valid.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedNode {
+    pub file: TreePath,
     pub location: NodeLocation,
     /// Set whenever the `id` parses, even if another field doesn't, so references to it resolve.
     pub id: Option<NodeId>,
     pub node: Option<Node>,
     pub findings: Vec<Finding>,
+    /// The frontmatter's top-level keys, so tree-wide problems can point at a field's line.
+    pub keys: Vec<Key>,
+}
+
+impl ParsedNode {
+    /// The line of `field`'s key, or the opening `---` when the field is absent.
+    pub fn line_of(&self, field: Field) -> u32 {
+        let key = self.keys.iter().find(|key| key.name == field.name());
+        key.map_or(OPENING_LINE, |key| key.line)
+    }
 }
 
 #[derive(Deserialize)]
@@ -105,10 +116,12 @@ fn rejected(file: &TreePath, location: NodeLocation, problem: Problem) -> Parsed
         problem,
     };
     ParsedNode {
+        file: file.clone(),
         location,
         id: None,
         node: None,
         findings: vec![finding],
+        keys: Vec::new(),
     }
 }
 
@@ -133,10 +146,12 @@ fn parse_node(
         None => (scanned_id(frontmatter), None),
     };
     ParsedNode {
+        file: file.clone(),
         location,
         id,
         node,
         findings: reader.findings,
+        keys: frontmatter.keys.clone(),
     }
 }
 
