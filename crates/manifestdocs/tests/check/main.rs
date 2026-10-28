@@ -1,3 +1,4 @@
+mod anchors;
 mod files;
 mod layout;
 mod links;

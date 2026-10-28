@@ -11,5 +11,6 @@ pub mod markdown;
 pub mod node;
 pub mod paths;
 pub mod refs;
+pub mod slug;
 pub mod tree;
 mod yaml;

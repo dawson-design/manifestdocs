@@ -7,6 +7,8 @@ pub struct Outline {
     pub links: Vec<Link>,
     /// Each heading's text, as GitHub builds its anchor from.
     pub headings: Vec<String>,
+    /// `id` and `name` values in raw HTML, which are anchors too.
+    pub html_anchors: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,10 +45,22 @@ pub fn outline(body: &str, first_line: u32) -> Outline {
             Event::Text(text) | Event::Code(text) => {
                 heading.iter_mut().for_each(|h| h.push_str(&text));
             }
+            Event::Html(html) | Event::InlineHtml(html) => {
+                outline.html_anchors.extend(html_anchors(&html));
+            }
             _ => {}
         }
     }
     outline
+}
+
+fn html_anchors(html: &str) -> Vec<String> {
+    let starts = ["id=\"", "name=\""].into_iter().flat_map(|attribute| {
+        let found = html.match_indices(attribute);
+        found.map(move |(start, _)| start + attribute.len())
+    });
+    let values = starts.filter_map(|start| html[start..].split_once('"'));
+    values.map(|(value, _)| value.to_owned()).collect()
 }
 
 // GitHub renders tables, footnotes, strikethrough and task lists, which change what counts
@@ -106,6 +120,13 @@ mod tests {
 
         assert_eq!(links(body), []);
         assert_eq!(outline(body, 1).headings, Vec::<String>::new());
+    }
+
+    #[test]
+    fn collects_html_id_and_name_values_as_anchors() {
+        let body = "<a id=\"step-one\"></a>\n\nText with <span name=\"two\">x</span>.\n";
+
+        assert_eq!(outline(body, 1).html_anchors, ["step-one", "two"]);
     }
 
     #[test]
