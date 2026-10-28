@@ -6,29 +6,44 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use ignore::{DirEntry, WalkBuilder};
-use manifestdocs_core::check::{Snapshot, markdown_to_read};
+use manifestdocs_core::check::{Snapshot, markdown_to_read, outside_anchor_targets};
 use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::paths::RepoPath;
 
 use crate::locate::Roots;
 use crate::report::relative;
 
+/// Reads the tree's Markdown, then any Markdown outside it that links point into with an
+/// anchor, so those anchors can be checked too.
 pub fn snapshot(roots: &Roots, config: &TreeConfig, cwd: &Path) -> Result<Snapshot> {
     let tree_root = repo_path(&roots.repo_root, &roots.tree_root)
         .context("the tree's folder path isn't UTF-8")?;
     let paths = list_files(&roots.repo_root)?;
-    let mut markdown = BTreeMap::new();
-    for path in markdown_to_read(config, &tree_root, &paths) {
-        let file = roots.repo_root.join(path.as_str());
-        let text = fs::read_to_string(&file)
-            .with_context(|| format!("can't read {} as UTF-8 text", relative(&file, cwd)))?;
-        markdown.insert(path, text);
-    }
-    Ok(Snapshot {
+    let mut snapshot = Snapshot {
         tree_root,
         paths,
-        markdown,
-    })
+        markdown: BTreeMap::new(),
+    };
+    let in_tree = markdown_to_read(config, &snapshot.tree_root, &snapshot.paths);
+    read_into(&mut snapshot, in_tree, &roots.repo_root, cwd)?;
+    let outside = outside_anchor_targets(config, &snapshot);
+    read_into(&mut snapshot, outside, &roots.repo_root, cwd)?;
+    Ok(snapshot)
+}
+
+fn read_into(
+    snapshot: &mut Snapshot,
+    paths: impl IntoIterator<Item = RepoPath>,
+    repo_root: &Path,
+    cwd: &Path,
+) -> Result<()> {
+    for path in paths {
+        let file = repo_root.join(path.as_str());
+        let text = fs::read_to_string(&file)
+            .with_context(|| format!("can't read {} as UTF-8 text", relative(&file, cwd)))?;
+        snapshot.markdown.insert(path, text);
+    }
+    Ok(())
 }
 
 // GitHub shows dotfiles and applies only the repo's own .gitignore files, so the walk does

@@ -8,7 +8,7 @@ use crate::frontmatter::{self, Split};
 use crate::id::NodeId;
 use crate::layout::{Layout, NodeFile, layout};
 use crate::link::{LinkTarget, Targets, resolve};
-use crate::markdown::outline;
+use crate::markdown::{Link, outline};
 use crate::node::{NodeLocation, ParsedNode, read_node_file};
 use crate::paths::{RepoPath, TreePath};
 use crate::tree::tree_findings;
@@ -81,8 +81,29 @@ fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
     snapshot.markdown.get(&path).map(String::as_str)
 }
 
+/// Markdown outside the files `markdown_to_read` names that links point into with an anchor.
+/// The I/O side reads these as well, so their anchors can be checked.
+pub fn outside_anchor_targets(config: &TreeConfig, snapshot: &Snapshot) -> BTreeSet<RepoPath> {
+    let layout = layout(config, &snapshot.tree_root, &snapshot.paths);
+    let links = layout
+        .checked
+        .iter()
+        .flat_map(|file| resolved_links(snapshot, file));
+    links
+        .filter_map(|(_, target)| match target? {
+            LinkTarget::Local {
+                path,
+                anchor: Some(_),
+            } => Some(path),
+            _ => None,
+        })
+        .filter(|path| path.as_str().ends_with(".md"))
+        .filter(|path| snapshot.paths.contains(path) && !snapshot.markdown.contains_key(path))
+        .collect()
+}
+
 fn broken_links(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
-    let targets = Targets::new(&snapshot.paths);
+    let targets = Targets::new(&snapshot.paths, &snapshot.markdown);
     let checked = layout.checked.iter();
     checked
         .flat_map(|file| broken_links_in(snapshot, &targets, file))
@@ -90,6 +111,54 @@ fn broken_links(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
 }
 
 fn broken_links_in(snapshot: &Snapshot, targets: &Targets, file: &TreePath) -> Vec<Finding> {
+    let links = resolved_links(snapshot, file).into_iter();
+    links
+        .filter_map(|(link, target)| {
+            let problem = link_problem(&link.target, target, targets, file)?;
+            Some(Finding {
+                file: file.clone(),
+                line: Some(link.line),
+                problem,
+            })
+        })
+        .collect()
+}
+
+fn link_problem(
+    written: &str,
+    target: Option<LinkTarget>,
+    targets: &Targets,
+    file: &TreePath,
+) -> Option<Problem> {
+    match target {
+        None => Some(Problem::BrokenLink(written.to_owned())),
+        Some(LinkTarget::External(_)) => None,
+        Some(LinkTarget::Local { path, .. }) if !targets.exists(&path) => {
+            Some(Problem::BrokenLink(written.to_owned()))
+        }
+        Some(LinkTarget::Local {
+            path,
+            anchor: Some(anchor),
+        }) if !targets.has_anchor(&path, &anchor) => Some(Problem::MissingAnchor {
+            path: shown_path(written, file),
+            anchor,
+        }),
+        Some(LinkTarget::Local { .. }) => None,
+    }
+}
+
+// A link to an anchor in the same file names the file, so the message says where to look.
+fn shown_path(written: &str, file: &TreePath) -> String {
+    let path = written.split('#').next().unwrap_or_default();
+    if path.is_empty() {
+        file.file_name().to_owned()
+    } else {
+        path.to_owned()
+    }
+}
+
+/// The links in `file`'s body, each with what it resolves to.
+fn resolved_links(snapshot: &Snapshot, file: &TreePath) -> Vec<(Link, Option<LinkTarget>)> {
     let (Some(text), Some(from)) = (
         markdown(snapshot, file),
         snapshot.tree_root.join(file.as_str()),
@@ -99,15 +168,9 @@ fn broken_links_in(snapshot: &Snapshot, targets: &Targets, file: &TreePath) -> V
     let (body, first_line) = frontmatter::body(text);
     let links = outline(body, first_line).links.into_iter();
     links
-        .filter(|link| match resolve(&link.target, &from) {
-            Some(LinkTarget::External(_)) => false,
-            Some(LinkTarget::Local { path, .. }) => !targets.exists(&path),
-            None => true,
-        })
-        .map(|link| Finding {
-            file: file.clone(),
-            line: Some(link.line),
-            problem: Problem::BrokenLink(link.target),
+        .map(|link| {
+            let target = resolve(&link.target, &from);
+            (link, target)
         })
         .collect()
 }

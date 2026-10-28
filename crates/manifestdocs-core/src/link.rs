@@ -1,10 +1,13 @@
 //! Link targets in Markdown, resolved against the repo's files.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use percent_encoding::percent_decode_str;
 
+use crate::frontmatter;
+use crate::markdown::outline;
 use crate::paths::RepoPath;
+use crate::slug;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkTarget {
@@ -17,10 +20,12 @@ pub enum LinkTarget {
     External(String),
 }
 
-/// The repo's files and the folders that hold them, for checking that local links resolve.
+/// The repo's files, the folders that hold them, and the anchors in the Markdown that was
+/// read, for checking that local links resolve.
 pub struct Targets<'a> {
     files: &'a BTreeSet<RepoPath>,
     folders: BTreeSet<&'a str>,
+    anchors: BTreeMap<&'a RepoPath, BTreeSet<String>>,
 }
 
 /// Resolves `target` as written in the Markdown file `from`. `None` when it can't name a
@@ -46,12 +51,20 @@ pub fn resolve(target: &str, from: &RepoPath) -> Option<LinkTarget> {
 }
 
 impl<'a> Targets<'a> {
-    pub fn new(files: &'a BTreeSet<RepoPath>) -> Self {
+    pub fn new(files: &'a BTreeSet<RepoPath>, markdown: &'a BTreeMap<RepoPath, String>) -> Self {
         let folders = files
             .iter()
             .flat_map(|file| folders_of(file.as_str()))
             .collect();
-        Self { files, folders }
+        let anchors = markdown
+            .iter()
+            .map(|(path, text)| (path, anchors_in(text)))
+            .collect();
+        Self {
+            files,
+            folders,
+            anchors,
+        }
     }
 
     /// Whether `path` is a file or folder in the repo, matching case exactly as GitHub does.
@@ -59,6 +72,21 @@ impl<'a> Targets<'a> {
         let path_str = path.as_str();
         path_str.is_empty() || self.files.contains(path) || self.folders.contains(path_str)
     }
+
+    /// Whether `anchor` matches a heading or HTML anchor in `path`. Paths whose Markdown wasn't
+    /// read, such as a source file with a `#L10` line anchor, always match.
+    pub fn has_anchor(&self, path: &RepoPath, anchor: &str) -> bool {
+        let anchors = self.anchors.get(path);
+        anchors.is_none_or(|anchors| anchors.contains(anchor))
+    }
+}
+
+fn anchors_in(text: &str) -> BTreeSet<String> {
+    let (body, first_line) = frontmatter::body(text);
+    let outline = outline(body, first_line);
+    let mut anchors = slug::anchors(outline.headings.iter().map(String::as_str));
+    anchors.extend(outline.html_anchors);
+    anchors
 }
 
 fn folders_of(file: &str) -> impl Iterator<Item = &str> {
@@ -147,7 +175,8 @@ mod tests {
             .into_iter()
             .map(|path| RepoPath::new(path).unwrap())
             .collect();
-        let targets = Targets::new(&files);
+        let markdown = BTreeMap::new();
+        let targets = Targets::new(&files, &markdown);
         let exists = |path: &str| targets.exists(&RepoPath::new(path).unwrap());
 
         assert!(exists("docs/search/search.md"));
