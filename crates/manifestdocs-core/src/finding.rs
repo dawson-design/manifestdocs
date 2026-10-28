@@ -107,6 +107,28 @@ impl Field {
             Self::SupersededBy => "superseded_by",
         }
     }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|field| field.name() == name)
+    }
+
+    /// The YAML type the field takes, as a problem message names it.
+    pub fn expected(self) -> &'static str {
+        match self {
+            Self::Repos | Self::Work => "a list",
+            Self::Id | Self::Title | Self::Status | Self::Summary | Self::SupersededBy => "text",
+        }
+    }
+
+    const ALL: [Field; 7] = [
+        Self::Id,
+        Self::Title,
+        Self::Status,
+        Self::Summary,
+        Self::Repos,
+        Self::Work,
+        Self::SupersededBy,
+    ];
 }
 
 impl fmt::Display for Severity {

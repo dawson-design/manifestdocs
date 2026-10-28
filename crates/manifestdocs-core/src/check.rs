@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{self, TreeConfig};
 use crate::finding::{Finding, Problem, Severity};
-use crate::layout::{Layout, layout};
-use crate::node::NodeLocation;
+use crate::layout::{Layout, NodeFile, layout};
+use crate::node::{NodeLocation, ParsedNode, read_node_file};
 use crate::paths::{RepoPath, TreePath};
 
 /// The files the I/O side reads for the pure core.
@@ -49,24 +49,35 @@ pub fn markdown_to_read(
 
 pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     let layout = layout(config, &snapshot.tree_root, &snapshot.paths);
-    let mut findings = layout_findings(config, &layout);
+    let nodes: Vec<ParsedNode> = layout
+        .node_files
+        .iter()
+        .filter_map(|file| read(config, snapshot, file))
+        .collect();
+    let mut findings = layout_findings(config, &layout, &nodes);
+    findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
-        nodes: layout.node_files.len(),
+        nodes: nodes.iter().filter(|node| node.id.is_some()).count(),
         findings,
     }
 }
 
-fn layout_findings(config: &TreeConfig, layout: &Layout) -> Vec<Finding> {
+fn read(config: &TreeConfig, snapshot: &Snapshot, file: &NodeFile) -> Option<ParsedNode> {
+    let path = snapshot.tree_root.join(file.path.as_str())?;
+    let text = snapshot.markdown.get(&path)?;
+    read_node_file(&file.path, file.location.clone(), text, config)
+}
+
+fn layout_findings(config: &TreeConfig, layout: &Layout, nodes: &[ParsedNode]) -> Vec<Finding> {
     let nested = layout.nested_trees.iter().map(|folder| Finding {
         file: folder.clone(),
         line: None,
         problem: Problem::NestedTreeSkipped,
     });
-    let has_root = layout
-        .node_files
+    let has_root = nodes
         .iter()
-        .any(|file| file.location == NodeLocation::Root);
+        .any(|node| node.location == NodeLocation::Root && node.id.is_some());
     let no_root = (!has_root).then(|| Finding {
         file: TreePath::new(config::FILE_NAME).unwrap_or_default(),
         line: None,
