@@ -12,9 +12,9 @@ use manifestdocs_core::node::{Node, NodeStatus};
 use manifestdocs_core::tree::{Entry, NodeSelector, SelectError, Tree};
 
 use crate::files;
-use crate::locate::{locate, tree_path};
+use crate::locate::locate;
 use crate::report::{finding_line, relative, write_stdout};
-use crate::tree::{heading, name};
+use crate::tree::{heading, name, path_in_tree};
 
 pub fn run(arg: &str) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
@@ -24,7 +24,7 @@ pub fn run(arg: &str) -> Result<ExitCode> {
         tree_root: &roots.tree_root,
         cwd: &cwd,
     };
-    let selector = selector(arg, &cwd, &roots.tree_root)?;
+    let selector = selector(&tree, arg, &cwd, &roots.tree_root)?;
     let entry = tree
         .select(&selector)
         .map_err(|error| select_error(arg, error, &paths))?;
@@ -53,14 +53,14 @@ impl Paths<'_> {
 }
 
 // An argument that starts with `fd-` is always an ID, so a folder with that name is `./fd-x`.
-fn selector(arg: &str, cwd: &Path, tree_root: &Path) -> Result<NodeSelector> {
+fn selector(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<NodeSelector> {
     if arg.starts_with("fd-") {
         let prefix = NodeIdPrefix::parse(arg).ok_or_else(|| {
             anyhow!("`{arg}` isn't a node ID: expected `fd-` and 4 to 6 lowercase hex characters")
         })?;
         return Ok(NodeSelector::Id(prefix));
     }
-    Ok(NodeSelector::Path(tree_path(arg, cwd, tree_root)?))
+    Ok(NodeSelector::Path(path_in_tree(tree, arg, cwd, tree_root)?))
 }
 
 fn select_error(arg: &str, error: SelectError, paths: &Paths) -> anyhow::Error {

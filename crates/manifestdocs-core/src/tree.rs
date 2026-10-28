@@ -37,6 +37,8 @@ pub struct Tree {
     pub parents: BTreeMap<TreePath, TreePath>,
     /// Each supporting doc's owner's node file. No entry: no node owns it.
     pub owners: BTreeMap<TreePath, TreePath>,
+    /// The outermost folders under the root that start their own tree.
+    pub nested_trees: Vec<TreePath>,
 }
 
 /// A node file whose `id` parses, which makes it a node whether or not the rest is valid.
@@ -97,6 +99,7 @@ pub fn read_tree(config: &TreeConfig, snapshot: &Snapshot) -> Tree {
         entries,
         parents,
         owners,
+        nested_trees: layout.nested_trees,
     }
 }
 
