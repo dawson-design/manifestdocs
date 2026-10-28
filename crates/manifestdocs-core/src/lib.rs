@@ -6,6 +6,8 @@ pub mod finding;
 pub mod frontmatter;
 pub mod id;
 pub mod layout;
+pub mod link;
+pub mod markdown;
 pub mod node;
 pub mod paths;
 pub mod refs;

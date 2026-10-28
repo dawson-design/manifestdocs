@@ -17,6 +17,8 @@ pub struct Frontmatter<'a> {
     /// The YAML text, without the `---` lines.
     pub yaml: &'a str,
     pub body: &'a str,
+    /// The file line the body starts on.
+    pub body_line: u32,
     /// The top-level keys, read from the text so they're known even when the YAML is broken.
     pub keys: Vec<Key>,
 }
@@ -43,9 +45,11 @@ pub fn split(text: &str) -> Split<'_> {
     for line in lines {
         if is_fence(line) {
             let yaml = &text[start..offset];
+            let body_start = offset + line.len();
             return Split::Present(Frontmatter {
                 yaml,
-                body: &text[offset + line.len()..],
+                body: &text[body_start..],
+                body_line: line_number(text, body_start),
                 keys: keys(yaml),
             });
         }
@@ -54,10 +58,24 @@ pub fn split(text: &str) -> Split<'_> {
     Split::Unclosed
 }
 
+/// The Markdown after any frontmatter, and the file line it starts on. A block that never
+/// closes counts as body, so its links are still checked.
+pub fn body(text: &str) -> (&str, u32) {
+    match split(text) {
+        Split::Present(frontmatter) => (frontmatter.body, frontmatter.body_line),
+        Split::Absent | Split::Unclosed => (text.strip_prefix('\u{feff}').unwrap_or(text), 1),
+    }
+}
+
 impl Frontmatter<'_> {
     pub fn key(&self, name: &str) -> Option<&Key> {
         self.keys.iter().find(|key| key.name == name)
     }
+}
+
+fn line_number(text: &str, offset: usize) -> u32 {
+    let newlines = text[..offset].matches('\n').count();
+    u32::try_from(newlines + 1).unwrap_or(u32::MAX)
 }
 
 fn is_fence(line: &str) -> bool {
@@ -102,6 +120,7 @@ mod tests {
 
         assert_eq!(frontmatter.yaml, "id: fd-000001\n");
         assert_eq!(frontmatter.body, "\n# Title\n");
+        assert_eq!(frontmatter.body_line, 4);
     }
 
     #[test]
