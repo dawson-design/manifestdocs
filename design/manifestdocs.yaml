@@ -1,0 +1,7 @@
+name: manifest-docs
+github:
+  host: github.com
+  docs_repo: dawson-design/manifestdocs
+decisions:
+  merge: review
+statuses: [draft, approved, superseded]

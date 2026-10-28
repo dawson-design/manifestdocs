@@ -1,0 +1,31 @@
+---
+id: fd-8ff5b9
+title: CLI
+status: draft
+summary: The commands, and their text and JSON output.
+---
+
+# CLI
+
+## Commands
+
+| Command | Purpose | Needs GitHub |
+|---|---|---|
+| `mfd tree [path] [--depth n]` | Outline of nodes with status | No |
+| `mfd show <id or path>` | One node in full, with supporting docs listed | No |
+| `mfd context <id or path>` | Node in full, the root node, linked docs, ancestor and child summaries | No |
+| `mfd context <issue-ref>` | Issue, summaries of its parent chain, linked node context | Yes |
+| `mfd check` | Validate the tree; see [checks](../checks/checks.md) | No |
+| `mfd work <id>` | Work items linked to a node and their sub-issues, with open or closed state | Yes |
+| `mfd stale` | Report open issues whose node changed after their `spec-ref` | Yes |
+| `mfd decide` | Write a decision record from a file or stdin; see [decision records](../decision-records/decision-records.md) | No |
+| `mfd decisions [id]` | List decision records for a node and its ancestors, or for the whole tree | No |
+| `mfd init` | Create `manifestdocs.yaml` and a root node | No |
+
+Commands that need GitHub fail with a clear message when `gh` is missing or unauthenticated. All other commands still work.
+
+## Output
+
+- **Text** for people, the default in a terminal.
+- **`--json`** for scripts and tooling, with a documented, versioned schema.
+- **`--format md --budget <tokens>`** for agents; see [agent context](../context/context.md).
