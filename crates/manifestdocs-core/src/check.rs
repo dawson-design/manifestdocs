@@ -7,6 +7,8 @@ use crate::finding::{Field, Finding, Problem, Severity};
 use crate::frontmatter::{self, Split};
 use crate::id::NodeId;
 use crate::layout::{Layout, NodeFile, layout};
+use crate::link::{LinkTarget, Targets, resolve};
+use crate::markdown::outline;
 use crate::node::{NodeLocation, ParsedNode, read_node_file};
 use crate::paths::{RepoPath, TreePath};
 use crate::tree::tree_findings;
@@ -61,6 +63,7 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
     findings.extend(tree_findings(&nodes));
     findings.extend(stray_node_ids(snapshot, &layout));
+    findings.extend(broken_links(snapshot, &layout));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
         nodes: nodes.iter().filter(|node| node.id.is_some()).count(),
@@ -76,6 +79,37 @@ fn read(config: &TreeConfig, snapshot: &Snapshot, file: &NodeFile) -> Option<Par
 fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
     let path = snapshot.tree_root.join(file.as_str())?;
     snapshot.markdown.get(&path).map(String::as_str)
+}
+
+fn broken_links(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
+    let targets = Targets::new(&snapshot.paths);
+    let checked = layout.checked.iter();
+    checked
+        .flat_map(|file| broken_links_in(snapshot, &targets, file))
+        .collect()
+}
+
+fn broken_links_in(snapshot: &Snapshot, targets: &Targets, file: &TreePath) -> Vec<Finding> {
+    let (Some(text), Some(from)) = (
+        markdown(snapshot, file),
+        snapshot.tree_root.join(file.as_str()),
+    ) else {
+        return Vec::new();
+    };
+    let (body, first_line) = frontmatter::body(text);
+    let links = outline(body, first_line).links.into_iter();
+    links
+        .filter(|link| match resolve(&link.target, &from) {
+            Some(LinkTarget::External(_)) => false,
+            Some(LinkTarget::Local { path, .. }) => !targets.exists(&path),
+            None => true,
+        })
+        .map(|link| Finding {
+            file: file.clone(),
+            line: Some(link.line),
+            problem: Problem::BrokenLink(link.target),
+        })
+        .collect()
 }
 
 // A node ID outside a node file usually means a folder was renamed without its node file.

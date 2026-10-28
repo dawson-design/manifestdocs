@@ -21,6 +21,12 @@ impl RepoPath {
         normalise(&self.0, relative).map(Self)
     }
 
+    /// The folder this path is in. The root's folder is the root itself.
+    pub fn parent(&self) -> RepoPath {
+        let folder = self.0.rsplit_once('/').map_or("", |(folder, _)| folder);
+        RepoPath(folder.to_owned())
+    }
+
     /// This path relative to `tree_root`, when it is the root or inside it.
     pub fn in_tree(&self, tree_root: &RepoPath) -> Option<TreePath> {
         within(&self.0, &tree_root.0).map(|rest| TreePath(rest.to_owned()))

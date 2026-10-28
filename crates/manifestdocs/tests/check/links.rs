@@ -1,0 +1,75 @@
+use crate::support::{Fixture, node};
+
+/// A valid node whose body continues with `body`, starting on line 9.
+fn node_with_body(id: &str, title: &str, body: &str) -> String {
+    format!("{}{body}", node(id, title))
+}
+
+#[test]
+fn reports_broken_links_in_nodes_and_supporting_docs_at_their_lines() {
+    let root = node_with_body(
+        "fd-000001",
+        "Demo",
+        "[search](search/search.md)\n[engine ADR](../adr/0001-engine.md)\n[folder](search/)\n\
+         [tips](Kitchen%20Notes/tips.md)\n[readme](/README.md)\n[site](https://example.com/gone.md)\n\
+         `[code](nope.md)`\n![logo](logo.png)\n[ref][r]\n\n[r]: search/search.md\n",
+    );
+    let search = node_with_body(
+        "fd-000002",
+        "Search",
+        "[gone](ranking.md)\n[case](../Search/search.md)\n[above](../../../x.md)\n",
+    );
+    let broken = "---\nid: fd-000003\ntitle: Broken\nstatus: draft\nsummary: \"Broken summary.\"\n---\n\n[x](nowhere.md)\n";
+    let record = "---\nid: dc-0000001\n---\n\n[x](nope.md)\n";
+    let fixture = Fixture::new(
+        "links",
+        &[
+            ("README.md", "# Readme\n"),
+            ("adr/0001-engine.md", "# Engine\n"),
+            ("docs/manifestdocs.yaml", "name: demo\n"),
+            ("docs/demo.md", &root),
+            ("docs/logo.png", "png"),
+            ("docs/Kitchen Notes/tips.md", "# Tips\n"),
+            ("docs/notes.md", "See [missing](missing.md).\n"),
+            ("docs/search/search.md", &search),
+            ("docs/search/decisions/2026-10-28-engine.md", record),
+            ("docs/broken/broken.md", broken),
+        ],
+    );
+
+    let run = fixture.check("docs");
+
+    assert_eq!(
+        run.stdout,
+        "broken/broken.md:3: error: `title` must be double-quoted\n\
+         broken/broken.md:8: error: broken link `nowhere.md`\n\
+         notes.md:1: error: broken link `missing.md`\n\
+         search/search.md:9: error: broken link `ranking.md`\n\
+         search/search.md:10: error: broken link `../Search/search.md`\n\
+         search/search.md:11: error: broken link `../../../x.md`\n\
+         \n3 nodes: 6 errors\n"
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn checks_links_in_a_node_file_whose_frontmatter_never_closes() {
+    let root = node("fd-000001", "Demo");
+    let fixture = Fixture::new(
+        "links-unclosed",
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("feature/feature.md", "---\nid: fd-000002\n\n[x](gone.md)\n"),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(
+        run.stdout,
+        "feature/feature.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n\
+         feature/feature.md:4: error: broken link `gone.md`\n\
+         \n1 node: 2 errors\n"
+    );
+}
