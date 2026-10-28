@@ -5,10 +5,26 @@ use std::collections::BTreeMap;
 use crate::check::{Snapshot, read_node};
 use crate::config::{self, TreeConfig};
 use crate::finding::{Field, Finding, Problem, Severity};
-use crate::id::NodeId;
+use crate::id::{NodeId, NodeIdPrefix};
 use crate::layout::layout;
 use crate::node::{Node, NodeLocation, NodeStatus, ParsedNode};
 use crate::paths::TreePath;
+
+/// How a command names one node: by ID or prefix, or by its node file or folder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NodeSelector {
+    Id(NodeIdPrefix),
+    Path(TreePath),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SelectError<'a> {
+    NoMatch,
+    /// More than one node has the ID or prefix, sorted by ID.
+    Ambiguous(Vec<&'a Entry>),
+    /// The path is in the tree but isn't a node file or node folder.
+    NotANode,
+}
 
 /// The nodes in a tree and how they relate, as `tree` and `show` read them.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -131,6 +147,28 @@ impl Tree {
         lines.push((level, entry));
         for child in self.children(&entry.file) {
             self.push_outline(child, level + 1, depth, lines);
+        }
+    }
+
+    pub fn select(&self, selector: &NodeSelector) -> Result<&Entry, SelectError<'_>> {
+        match selector {
+            NodeSelector::Id(prefix) => {
+                let mut matches: Vec<&Entry> = self
+                    .entries
+                    .values()
+                    .filter(|entry| prefix.matches(&entry.id))
+                    .collect();
+                matches.sort_by_key(|entry| &entry.id);
+                match matches.as_slice() {
+                    [] => Err(SelectError::NoMatch),
+                    [entry] => Ok(entry),
+                    _ => Err(SelectError::Ambiguous(matches)),
+                }
+            }
+            NodeSelector::Path(path) => {
+                let entry = self.entries.get(path).or_else(|| self.entry_at(path));
+                entry.ok_or(SelectError::NotANode)
+            }
         }
     }
 
