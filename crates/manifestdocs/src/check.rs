@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -17,9 +18,9 @@ pub fn run() -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let roots = locate(&cwd)?;
     let config = read_config(&roots.tree_root, &cwd)?;
-    let snapshot = files::snapshot(&roots)?;
+    let snapshot = files::snapshot(&roots, &config, &cwd)?;
     let report = check(&config, &snapshot);
-    print!("{}", render(&report, &roots.tree_root, &cwd));
+    write_stdout(&render(&report, &roots.tree_root, &cwd))?;
     Ok(if report.has_errors() {
         ExitCode::from(1)
     } else {
@@ -35,4 +36,14 @@ fn read_config(tree_root: &Path, cwd: &Path) -> Result<TreeConfig> {
         Some(line) => anyhow!("{shown}:{line}: {}", error.message),
         None => anyhow!("{shown}: {}", error.message),
     })
+}
+
+// A reader such as `head` that closes the pipe early isn't an error.
+fn write_stdout(text: &str) -> Result<()> {
+    match io::stdout().lock().write_all(text.as_bytes()) {
+        Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
+            Err(error).context("can't write the report")
+        }
+        _ => Ok(()),
+    }
 }

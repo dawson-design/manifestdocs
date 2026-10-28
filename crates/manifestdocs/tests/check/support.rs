@@ -28,6 +28,11 @@ impl Fixture {
         Self { root }
     }
 
+    /// The absolute path of `relative` inside the fixture.
+    pub fn path(&self, relative: &str) -> PathBuf {
+        self.root.join(relative)
+    }
+
     /// Runs `manifestdocs check` from `folder`, a path relative to the fixture root.
     pub fn check(&self, folder: &str) -> Run {
         let output = Command::new(env!("CARGO_BIN_EXE_manifestdocs"))

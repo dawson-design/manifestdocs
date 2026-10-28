@@ -77,6 +77,7 @@ fn never_treats_a_decisions_folder_as_a_node() {
     let run = fixture.check("");
 
     assert_eq!(run.stdout, "1 node: no problems\n");
+    assert_eq!(run.code, 0);
 }
 
 #[test]
@@ -90,6 +91,7 @@ fn finds_the_tree_from_a_subfolder_and_names_paths_from_there() {
         run.stdout,
         "../manifestdocs.yaml: warning: no root node `demo.md`\n\n1 node: 1 warning\n"
     );
+    assert_eq!(run.code, 0);
 }
 
 #[test]
