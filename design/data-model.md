@@ -66,6 +66,22 @@ struct Snapshot {
     markdown: BTreeMap<RepoPath, String>,  // every .md under the tree, plus outside anchor targets
 }
 
+// What `context` reads and assembles (M1)
+enum DocsVersion {
+    NotInGit,
+    WorkingTree { branch: Option<String>, commit: String, date: String, uncommitted: bool, default_branch: Option<String> },
+    // branch is None when HEAD is detached; uncommitted covers the tree and the loaded docs
+}
+struct Budget(u32);                    // tokens, at least 1; fills characters / 3, less 10%
+struct Links {                         // one hop from the target's body, in order of first appearance
+    docs: Vec<RepoPath>,               // local Markdown that isn't a node, loaded in full
+    nodes: Vec<TreePath>,              // other nodes' files, as one-line summaries
+    listed: Vec<Listed>,               // other files, folders, URLs, and links inside loaded docs
+}
+enum Listed { Path(RepoPath), Url(String) }
+// M1 also adds TreeConfig.node_tokens: u32 (default 2500, at least 1)
+// and Problem::NodeTooLarge { tokens: u32, limit: u32 }, a warning
+
 enum LinkTarget {
     Local { path: RepoPath, anchor: Option<Anchor> },  // can leave the tree, e.g. to an ADR folder beside it
     External(String),                                   // never parsed or fetched

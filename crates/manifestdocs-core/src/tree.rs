@@ -135,6 +135,27 @@ fn nearest_node(folders: &BTreeMap<TreePath, TreePath>, folder: TreePath) -> Opt
 }
 
 impl Tree {
+    /// A node's name, ID and status, such as `Recipe search (fd-7c2e41, approved)`.
+    pub fn heading(&self, entry: &Entry) -> String {
+        let status = match &entry.node {
+            Ok(node) => match &node.status {
+                NodeStatus::Active(status) => status.as_str(),
+                NodeStatus::Superseded { .. } => config::SUPERSEDED,
+            },
+            Err(_) => "has problems",
+        };
+        format!("{} ({}, {status})", self.name(entry), entry.id)
+    }
+
+    /// A node's title, or, when its frontmatter has errors, its folder's name or the tree's name.
+    pub fn name<'a>(&'a self, entry: &'a Entry) -> &'a str {
+        match (&entry.node, folder_name(&entry.file)) {
+            (Ok(node), _) => node.title.as_str(),
+            (Err(_), "") => self.config.name.as_str(),
+            (Err(_), folder) => folder,
+        }
+    }
+
     /// The nodes at or below `folder`, depth first, each with its level below `folder`'s own
     /// node. When `folder` has no node of its own, its top-level nodes are level 1. `depth`
     /// limits the levels shown.
@@ -226,6 +247,14 @@ impl Tree {
         });
         sorted(top)
     }
+}
+
+fn folder_name(file: &TreePath) -> &str {
+    let folder = file
+        .as_str()
+        .rsplit_once('/')
+        .map_or("", |(folder, _)| folder);
+    folder.rsplit_once('/').map_or(folder, |(_, name)| name)
 }
 
 // Folder order compares segment by segment, so `recipes/search` comes before `recipes-archive`.

@@ -75,7 +75,7 @@ to supporting docs such as the [ranking rules](ranking-rules.md) and the
 | `id` | Yes | `fd-` plus 6 random hex characters, unique within the tree |
 | `title` | Yes | Plain name, double-quoted |
 | `status` | Yes | One of the statuses in `manifestdocs.yaml`, or `superseded` |
-| `summary` | Yes | One sentence, double-quoted, used in ancestor and child summaries |
+| `summary` | Yes | One sentence, double-quoted, used in child and linked-node summaries |
 | `repos` | No | Code repos that implement the node |
 | `work` | No | Top-level work items for the node. Their sub-issues link through the hierarchy |
 | `superseded_by` | When superseded | ID of the replacing node |

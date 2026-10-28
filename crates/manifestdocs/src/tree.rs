@@ -6,9 +6,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
-use manifestdocs_core::node::NodeStatus;
 use manifestdocs_core::paths::TreePath;
-use manifestdocs_core::tree::{Entry, Tree};
+use manifestdocs_core::tree::Tree;
 
 use crate::files;
 use crate::locate::{locate, tree_path};
@@ -28,39 +27,10 @@ pub fn run(path: Option<&str>, depth: Option<usize>) -> Result<ExitCode> {
     for (level, entry) in lines {
         let indent = "  ".repeat(level - top);
         let file = relative(&roots.tree_root.join(entry.file.as_str()), &cwd);
-        let _ = writeln!(out, "{indent}{}  {file}", heading(&tree, entry));
+        let _ = writeln!(out, "{indent}{}  {file}", tree.heading(entry));
     }
     write_stdout(&out)?;
     Ok(ExitCode::SUCCESS)
-}
-
-/// A node's name, ID and status, such as `Recipe search (fd-7c2e41, approved)`.
-pub fn heading(tree: &Tree, entry: &Entry) -> String {
-    let status = match &entry.node {
-        Ok(node) => match &node.status {
-            NodeStatus::Active(status) => status.as_str(),
-            NodeStatus::Superseded { .. } => "superseded",
-        },
-        Err(_) => "has problems",
-    };
-    format!("{} ({}, {status})", name(tree, entry), entry.id)
-}
-
-/// A node's title, or, when its frontmatter has errors, its folder's name or the tree's name.
-pub fn name<'a>(tree: &'a Tree, entry: &'a Entry) -> &'a str {
-    match (&entry.node, folder_name(&entry.file)) {
-        (Ok(node), _) => node.title.as_str(),
-        (Err(_), "") => tree.config.name.as_str(),
-        (Err(_), folder) => folder,
-    }
-}
-
-fn folder_name(file: &TreePath) -> &str {
-    let folder = file
-        .as_str()
-        .rsplit_once('/')
-        .map_or("", |(folder, _)| folder);
-    folder.rsplit_once('/').map_or(folder, |(_, name)| name)
 }
 
 // A node file stands for its node's folder.
@@ -79,11 +49,8 @@ fn start_folder(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<
 /// is an error that names it.
 pub fn path_in_tree(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<TreePath> {
     let path = tree_path(arg, cwd, tree_root)?;
-    let nested = tree.nested_trees.iter();
-    if let Some(nested) = nested
-        .into_iter()
-        .find(|n| path == **n || path.is_within(n))
-    {
+    let mut nested = tree.nested_trees.iter();
+    if let Some(nested) = nested.find(|n| path == **n || path.is_within(n)) {
         let folder = relative(&tree_root.join(nested.as_str()), cwd);
         bail!("`{arg}` is in a separate tree, at `{folder}`; run the command there");
     }
