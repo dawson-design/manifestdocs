@@ -1,0 +1,7 @@
+{
+  "name": "manifestdocs",
+  "description": "Skills, commands and hooks that call the manifestdocs binary, so agents start from a feature's context, change its spec before its code, and verify the result.",
+  "version": "0.1.0",
+  "author": { "name": "Manifest Docs" },
+  "keywords": ["docs", "requirements", "context"]
+}

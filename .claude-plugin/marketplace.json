@@ -1,0 +1,12 @@
+{
+  "name": "manifestdocs",
+  "owner": { "name": "Manifest Docs" },
+  "description": "A local marketplace for installing the Manifest Docs plugin from a clone of its repo.",
+  "plugins": [
+    {
+      "name": "manifestdocs",
+      "source": "./plugins/manifestdocs",
+      "description": "Skills, a command and hooks that call the manifestdocs binary."
+    }
+  ]
+}
