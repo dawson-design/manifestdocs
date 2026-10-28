@@ -1,6 +1,6 @@
 # Manifest Docs: data model
 
-These are the types `manifestdocs-core` builds from a tree for M0: the two config files, nodes, the tree and the findings `check` reports. Decision records (M2), work links (M3) and context (M1) extend the model in their milestones. Any serde YAML backend can fill the raw structs these types are parsed from, so the model doesn't depend on the YAML crate.
+These are the types `manifestdocs-core` builds from a tree for M0: the two config files, nodes, the tree and the findings `check` reports. Decision records (M2), work links (M3) and context (M1) extend the model in their milestones. `serde-saphyr` fills the raw structs these types are parsed from, and the tool's own scan of the frontmatter supplies quoting and line numbers, so the model doesn't depend on the YAML crate.
 
 ## Terms
 
@@ -18,16 +18,17 @@ struct TreeConfig {
     name: TreeName,                  // file-name-safe; names the root node file
     github: Option<GitHubConfig>,    // None: work commands are off
     merge: MergeMode,                // default Review
-    statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"
+    statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"; never empty
 }
 struct GitHubConfig { host: Host, docs_repo: RepoRef }
 enum MergeMode { Review, Proposed }
+struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
-// ~/.config/manifestdocs/config.yaml
+// ~/.config/manifestdocs/config.yaml, with `tree` and `show`
 struct Workspace { path: AbsPath, tree: AbsPath }
 
 struct NodeId(String);               // "fd-" + exactly 6 lowercase hex
-struct NodeIdPrefix(String);         // CLI input only: "fd-" + 4 to 6 hex
+struct NodeIdPrefix(String);         // CLI input only: "fd-" + 4 to 6 hex, with `show`
 enum NodeSelector { Id(NodeIdPrefix), Path(TreePath) }
 
 struct Node {
@@ -46,36 +47,46 @@ enum NodeStatus { Active(StatusName), Superseded { by: NodeId } }
 struct Tree {
     config: TreeConfig,
     nodes: BTreeMap<NodeId, Node>,
-    parents: BTreeMap<NodeId, NodeId>,     // no entry: the root node, or top level when there is none
-    owners: BTreeMap<TreePath, NodeId>,    // supporting docs; no entry: unowned
+    parents: BTreeMap<NodeId, NodeId>,     // with `tree` and `show`; no entry: the root node, or top level when there is none
+    owners: BTreeMap<TreePath, NodeId>,    // with `tree` and `show`; supporting docs; no entry: unowned
     skipped_trees: Vec<TreePath>,
+}
+
+// What the I/O side reads for the pure core
+struct Snapshot {
+    tree_root: RepoPath,                   // "" when the tree is the repo root
+    paths: BTreeSet<RepoPath>,             // every file in the repo that git doesn't ignore
+    markdown: BTreeMap<RepoPath, String>,  // every .md under the tree, plus outside anchor targets
 }
 
 enum LinkTarget {
     Local { path: RepoPath, anchor: Option<Anchor> },  // can leave the tree, e.g. to an ADR folder beside it
-    External(Url),                                      // never fetched
+    External(String),                                   // never parsed or fetched
 }
 
-struct Finding { file: TreePath, line: Option<u32>, problem: Problem }
+struct Finding { file: TreePath, line: Option<u32>, problem: Problem }   // file can be a folder
 enum Problem {
-    UnparsableFrontmatter(String), MissingField(Field), UnquotedField(Field),
-    MalformedId(String), DuplicateId { also_in: TreePath }, UnknownStatus(String),
-    SupersededWithoutReplacement, ReplacementWithoutSuperseded, ReplacementNotFound(NodeId),
-    NodeIdOutsideNodeFile(NodeId), BrokenLink(String), MissingAnchor(String),
-    NoRootNode, NestedTreeSkipped, UnknownField(String),
+    UnparsableFrontmatter(String), MissingField(Field), EmptyField(Field), UnquotedField(Field),
+    WrongType { field: Field, expected: &'static str },
+    MalformedId(String), MalformedRepoRef(String), MalformedIssueRef(String),
+    DuplicateId { also_in: TreePath }, UnknownStatus(String),
+    SupersededWithoutReplacement, ReplacementWithoutSuperseded, SupersededBySelf,
+    ReplacementNotFound(NodeId), NodeIdOutsideNodeFile(NodeId),
+    BrokenLink(String), MissingAnchor(String),
+    NoRootNode, NestedTreeSkipped, UnknownField(String), NodeFileWithoutId,
 }
-impl Problem { fn severity(&self) -> Severity { /* the last three are warnings */ } }
+impl Problem { fn severity(&self) -> Severity { /* the last four are warnings */ } }
 ```
 
 Two rules are part of the types. A superseded node can't exist without a replacement, so parsing reports one as `SupersededWithoutReplacement`. A finding's severity comes from its problem, so no finding has the wrong severity.
 
 ## Where the I/O happens
 
-1. **Reading:** locate the root, list files with `ignore`, and read each file's path and text.
-2. **Checking:** pure functions turn those files into findings. They parse the config, sort the paths into node files, supporting docs and nested trees, parse each node, build the tree and run the checks. Tests build trees from in-memory file lists, with no disk.
+1. **Reading:** locate the root by walking up to `manifestdocs.yaml`, stopping at the repo root. Parse the config, list the repo's files with `ignore`, and read every Markdown file under the tree.
+2. **Checking:** pure functions turn the `Snapshot` into findings. They sort the paths into node files, supporting docs, records and nested trees, parse each node, index the IDs, and check references, links and anchors. Anchors in Markdown outside the tree need one more read: the core names those files, and the I/O side adds them to the `Snapshot`. Tests build a `Snapshot` in memory, with no disk.
 3. **Reporting:** render the findings and set the exit code.
 
-ID generation gets its random bytes from the I/O side, so the pure code stays deterministic. An invalid `manifestdocs.yaml` or user config stops the command with an error instead of producing findings, because no tree can be built without it.
+ID generation gets its random bytes from the I/O side, so the pure code stays deterministic.
 
 ## Rules `check` enforces
 
@@ -83,18 +94,26 @@ The types can't express these, so `check` does.
 
 1. Node IDs are unique across the tree.
 2. A replacement node exists and isn't the node itself.
-3. A node's parent is the nearest ancestor folder that is a node. The root node has no parent.
-4. Every supporting doc has exactly one owner: the nearest node above it. `decisions/` folders and nested trees are excluded.
-5. A node's status is in `statuses`, or is `superseded`.
+3. A node's status is in `statuses`, or is `superseded`.
+4. Local links resolve to a file or folder in the repo, and their anchors match a heading in the target.
+
+## Derived
+
+- A node's parent is the nearest ancestor folder that is a node. The root node has no parent.
+- Every supporting doc has exactly one owner: the nearest node above it. `decisions/` folders and nested trees are excluded.
 
 ## Defaults and edge cases
 
-- `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, and listing `superseded` in it changes nothing.
+- `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, listing `superseded` in it changes nothing, and an empty list is an error. A status name is one word with no spaces.
 - `merge` defaults to `review`.
+- An unknown key in `manifestdocs.yaml` is an error, because a typo such as `statues:` would otherwise fall back to the default. An unknown node field is a warning, so teams can add their own fields and typos still show.
 - Stored node IDs are exactly 6 hex characters after `fd-`. Commands accept a prefix of 4 to 6, and a prefix that matches more than one node is an error that lists the matches.
-- Unknown node fields are warnings, so teams can add their own fields and typos still show.
+- A file in a node file's position with frontmatter but no `id` gets a warning. A file there with no frontmatter is a supporting doc.
+- IDs are indexed from every node file whose `id` parses, even when another field is invalid, so one bad field doesn't cause a `ReplacementNotFound` for each node that names it. Links are checked in every body, even when its frontmatter fails.
 - `title` and `summary` are double-quoted. An unquoted `: ` breaks the YAML, an unquoted ` #` silently cuts the value short, and a bare `true` or `null` isn't text.
 - `check` validates links in supporting docs as well as in node bodies.
 - A folder named `decisions` under a node is its records folder, never a node.
+- `NoRootNode` is reported on `manifestdocs.yaml` and names the expected root node file. `NestedTreeSkipped` is reported on the nested tree's folder.
+- Anchors must match a heading's GitHub slug exactly. Supersession cycles aren't detected.
 - When workspace paths in the user config overlap, the longest match wins.
 - Link paths are repo paths, not tree paths, because a link can leave the tree, such as a link to an ADR folder next to it.

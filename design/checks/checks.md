@@ -16,5 +16,5 @@ summary: "Validates a tree and its decision records, so `check` can gate docs PR
 - Every decision record has valid frontmatter, a node that exists, and a `supersedes` reference that resolves.
 - At most one accepted decision per `topic` within a node.
 - With GitHub access, every referenced issue exists, and issues that name a node point to one that exists.
-- Warnings: a tree with no root node, one line for each nested tree it skipped, and unknown fields in a node's frontmatter.
+- Warnings: a tree with no root node, one line for each nested tree it skipped, unknown fields in a node's frontmatter, and a file in a node file's position with frontmatter but no `id`.
 - Optional: issue bodies that copy long passages of spec text instead of linking to the node.

@@ -14,7 +14,7 @@ Rust, split into a library crate and a thin binary crate.
 | CLI parsing | `clap` |
 | Tree walking that respects `.gitignore` | `ignore` |
 | Reading the default branch without a checkout | `git symbolic-ref`, `git ls-tree` and one `git cat-file --batch` process, behind the same file-source interface as the working tree; `gix` later |
-| Frontmatter and YAML | `serde` with `serde_yml` or `saphyr` |
+| Frontmatter and YAML | `serde` with `serde-saphyr`, plus the tool's own key scan for quoting and line numbers |
 | Markdown structure | `pulldown-cmark` |
 | Git history and SHAs | `git` subprocess first, `gix` later |
 | GitHub work tree | Read-only `gh api graphql` subprocess, batched per command |
