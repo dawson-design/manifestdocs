@@ -54,7 +54,11 @@ pub enum Problem {
     ReplacementNotFound(NodeId),
     NodeIdOutsideNodeFile(NodeId),
     BrokenLink(String),
-    MissingAnchor(String),
+    /// `path` is the link's path as written, and `anchor` the part after `#`.
+    MissingAnchor {
+        path: String,
+        anchor: String,
+    },
     NoRootNode {
         expected: TreePath,
     },
@@ -70,7 +74,23 @@ impl Problem {
             | Self::NestedTreeSkipped
             | Self::UnknownField(_)
             | Self::NodeFileWithoutId => Severity::Warning,
-            _ => Severity::Error,
+            Self::UnparsableFrontmatter(_)
+            | Self::MissingField(_)
+            | Self::EmptyField(_)
+            | Self::UnquotedField(_)
+            | Self::WrongType { .. }
+            | Self::MalformedId(_)
+            | Self::MalformedRepoRef(_)
+            | Self::MalformedIssueRef(_)
+            | Self::DuplicateId { .. }
+            | Self::UnknownStatus(_)
+            | Self::SupersededWithoutReplacement
+            | Self::ReplacementWithoutSuperseded
+            | Self::SupersededBySelf
+            | Self::ReplacementNotFound(_)
+            | Self::NodeIdOutsideNodeFile(_)
+            | Self::BrokenLink(_)
+            | Self::MissingAnchor { .. } => Severity::Error,
         }
     }
 }
@@ -146,7 +166,7 @@ impl fmt::Display for Problem {
                 )
             }
             Self::BrokenLink(target) => write!(f, "broken link `{target}`"),
-            Self::MissingAnchor(target) => write!(f, "no heading matches the anchor in `{target}`"),
+            Self::MissingAnchor { path, anchor } => write!(f, "no heading `#{anchor}` in `{path}`"),
             Self::NoRootNode { expected } => write!(f, "no root node `{expected}`"),
             Self::NestedTreeSkipped => f.write_str("skipped nested tree"),
             Self::UnknownField(name) => write!(f, "unknown field `{name}`"),

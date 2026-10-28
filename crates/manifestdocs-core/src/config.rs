@@ -51,7 +51,7 @@ struct RawConfig {
     name: Spanned<String>,
     github: Option<RawGitHub>,
     decisions: Option<RawDecisions>,
-    statuses: Option<Spanned<Vec<String>>>,
+    statuses: Option<Spanned<Vec<Spanned<String>>>>,
 }
 
 #[derive(Deserialize)]
@@ -104,7 +104,12 @@ impl StatusName {
 
 fn tree_name(name: &Spanned<String>) -> Result<TreeName, ConfigError> {
     let text = name.value.as_str();
-    let file_name_safe = !text.is_empty() && !text.starts_with('.') && !text.contains(['/', '\\']);
+    let file_name_safe = !text.is_empty()
+        && text.trim() == text
+        && !text.starts_with('.')
+        && !text.ends_with(".md")
+        && !text.contains(['/', '\\'])
+        && !text.contains(char::is_control);
     if !file_name_safe {
         return Err(at(
             name,
@@ -128,22 +133,21 @@ fn github(raw: RawGitHub) -> Result<GitHubConfig, ConfigError> {
     Ok(GitHubConfig { host, docs_repo })
 }
 
-fn statuses(raw: Option<Spanned<Vec<String>>>) -> Result<Vec<StatusName>, ConfigError> {
+// A blank `statuses:` reads as absent, so it gets the defaults too.
+fn statuses(raw: Option<Spanned<Vec<Spanned<String>>>>) -> Result<Vec<StatusName>, ConfigError> {
     let Some(raw) = raw else {
         return Ok(DEFAULT_STATUSES.map(|s| StatusName(s.to_owned())).to_vec());
     };
-    if let Some(bad) = raw
-        .value
-        .iter()
-        .find(|s| s.is_empty() || s.contains(char::is_whitespace))
-    {
-        return Err(at(&raw, format!("status `{bad}` must be one word")));
+    let not_one_word =
+        |s: &&Spanned<String>| s.value.is_empty() || s.value.contains(char::is_whitespace);
+    if let Some(bad) = raw.value.iter().find(not_one_word) {
+        return Err(at(bad, format!("status `{}` must be one word", bad.value)));
     }
     let statuses: Vec<StatusName> = raw
         .value
         .iter()
-        .filter(|s| *s != SUPERSEDED)
-        .map(|s| StatusName(s.clone()))
+        .filter(|s| !s.value.eq_ignore_ascii_case(SUPERSEDED))
+        .map(|s| StatusName(s.value.clone()))
         .collect();
     if statuses.is_empty() {
         return Err(at(
@@ -194,7 +198,7 @@ mod tests {
 
     #[test]
     fn reads_every_setting() {
-        let text = "name: manifest-docs\ngithub:\n  host: github.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, superseded]\n";
+        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\n";
         let config = parse(text).unwrap();
 
         let github = config.github.as_ref().unwrap();
@@ -218,7 +222,11 @@ mod tests {
             ("name: x\nstatuses: []\n", 2),
             ("name: x\nstatuses: [superseded]\n", 2),
             ("name: x\nstatuses: [in review]\n", 2),
+            ("name: x\nstatuses:\n  - draft\n  - in review\n", 4),
             ("name: ../x\n", 1),
+            ("name: \" demo\"\n", 1),
+            ("name: demo.md\n", 1),
+            ("name: \"de\\tmo\"\n", 1),
             (
                 "name: x\ngithub:\n  host: github.com\n  docs_repo: manifestdocs\n",
                 4,
@@ -233,6 +241,12 @@ mod tests {
             let error = parse(text).unwrap_err();
             assert_eq!(error.line, Some(line), "{text:?}: {}", error.message);
         }
+    }
+
+    #[test]
+    fn treats_a_blank_statuses_as_absent() {
+        let config = parse("name: x\nstatuses:\n").unwrap();
+        assert_eq!(status_names(&config), ["draft", "approved"]);
     }
 
     #[test]
