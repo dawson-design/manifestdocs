@@ -14,7 +14,7 @@ use manifestdocs_core::tree::{Entry, NodeSelector, SelectError, Tree};
 use crate::files;
 use crate::locate::locate;
 use crate::report::{finding_line, relative, write_stdout};
-use crate::tree::{heading, name, path_in_tree};
+use crate::tree::path_in_tree;
 
 pub fn run(arg: &str) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
@@ -24,10 +24,7 @@ pub fn run(arg: &str) -> Result<ExitCode> {
         tree_root: &roots.tree_root,
         cwd: &cwd,
     };
-    let selector = selector(&tree, arg, &cwd, &roots.tree_root)?;
-    let entry = tree
-        .select(&selector)
-        .map_err(|error| select_error(arg, error, &paths))?;
+    let entry = select_node(&tree, arg, &paths)?;
     match &entry.node {
         Ok(node) => {
             write_stdout(&render(&tree, entry, node, &paths))?;
@@ -41,15 +38,22 @@ pub fn run(arg: &str) -> Result<ExitCode> {
 }
 
 /// Output paths are shown from the current folder, like the paths `check` prints.
-struct Paths<'a> {
-    tree_root: &'a Path,
-    cwd: &'a Path,
+pub struct Paths<'a> {
+    pub tree_root: &'a Path,
+    pub cwd: &'a Path,
 }
 
 impl Paths<'_> {
     fn shown(&self, path: &str) -> String {
         relative(&self.tree_root.join(path), self.cwd)
     }
+}
+
+/// The node `arg` names, or an error that says why it names no single node.
+pub fn select_node<'a>(tree: &'a Tree, arg: &str, paths: &Paths) -> Result<&'a Entry> {
+    let selector = selector(tree, arg, paths.cwd, paths.tree_root)?;
+    tree.select(&selector)
+        .map_err(|error| select_error(arg, error, paths))
 }
 
 // An argument that starts with `fd-` is always an ID, so a folder with that name is `./fd-x`.
@@ -96,10 +100,10 @@ fn render(tree: &Tree, entry: &Entry, node: &Node, paths: &Paths) -> String {
 
 // Lines with nothing to say are left out.
 fn header(tree: &Tree, entry: &Entry, node: &Node, paths: &Paths) -> String {
-    let mut out = format!("{}\n", heading(tree, entry));
+    let mut out = format!("{}\n", tree.heading(entry));
     let _ = writeln!(out, "File: {}", paths.shown(entry.file.as_str()));
     if let Some(parent) = tree.parent(&entry.file) {
-        let _ = writeln!(out, "Parent: {} ({})", name(tree, parent), parent.id);
+        let _ = writeln!(out, "Parent: {} ({})", tree.name(parent), parent.id);
     }
     let _ = writeln!(out, "Summary: {}", node.summary.as_str());
     let repos: Vec<String> = node.repos.iter().map(ToString::to_string).collect();
@@ -117,12 +121,13 @@ fn header(tree: &Tree, entry: &Entry, node: &Node, paths: &Paths) -> String {
 
 fn replacement(tree: &Tree, id: &NodeId) -> String {
     match tree.entries.values().find(|entry| entry.id == *id) {
-        Some(entry) => format!("{} ({id})", name(tree, entry)),
+        Some(entry) => format!("{} ({id})", tree.name(entry)),
         None => id.to_string(),
     }
 }
 
-fn problems(findings: &[Finding], paths: &Paths) -> String {
+/// A broken node's errors, in `check`'s format.
+pub fn problems(findings: &[Finding], paths: &Paths) -> String {
     let mut findings: Vec<&Finding> = findings.iter().collect();
     findings.sort_by_key(|finding| finding.line);
     let lines = findings.iter().map(|finding| {

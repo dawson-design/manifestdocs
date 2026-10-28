@@ -47,6 +47,33 @@ Results rank by the [ranking rules](ranking-rules.md).
 
 A node's parent is the nearest folder above it that is a node. Every other file in a node's folder, such as `ranking-rules.md`, is one of its supporting docs. A `decisions/` folder contains decision records and is never a node.
 
+## Give an agent a feature's context
+
+`context` prints what a coding agent reads before planning: the node and its ancestors up to the root node in full, the docs the node links to, and one-line summaries of its children and linked nodes. With `--budget`, it leaves out what doesn't fit and names it by path.
+
+```console
+$ manifestdocs context fd-7c2e41 --format md --budget 8000
+# Context: fd-7c2e41 (docs main @ 3f9a1c2, 2026-10-27)
+
+## Feature: Recipe search (fd-7c2e41, draft)
+Path: recipes/search
+...
+## Parent: Recipes (fd-1a2b3c, approved)
+Path: recipes
+...
+## Project: Cookbook (fd-59db20, draft)
+...
+## Linked docs
+
+### recipes/search/ranking-rules.md
+...
+## Around this feature
+
+- Child: Filters (fd-7c2e99, draft): Narrows results.
+
+Estimated size: 236 of 8,000 tokens
+```
+
 ## Read and check the tree
 
 ```console
@@ -75,6 +102,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 |---|---|
 | `init [title]` | Starts a tree in the current folder |
 | `tree [path] [--depth n]` | Outlines the nodes, from the root or from a node or folder |
+| `context <id or path> [--budget n]` | Prints a node's context for an agent |
 | `show <id or path>` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
 | `check [path]` | Validates frontmatter, IDs, links and anchors, in the tree that contains `path` or the current folder |
 

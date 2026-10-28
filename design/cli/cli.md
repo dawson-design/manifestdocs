@@ -13,7 +13,7 @@ summary: "The commands, and their text and JSON output."
 |---|---|---|
 | `mfd tree [path] [--depth n]` | Outline of nodes with status | No |
 | `mfd show <id or path>` | One node in full, with supporting docs listed | No |
-| `mfd context <id or path>` | Node in full, the root node, linked docs, ancestor and child summaries | No |
+| `mfd context <id or path>` | Node and its ancestors in full, linked docs, child summaries | No |
 | `mfd context <issue-ref>` | Issue, summaries of its parent chain, linked node context | Yes |
 | `mfd check [path]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md) | No |
 | `mfd work <id>` | Work items linked to a node and their sub-issues, with open or closed state | Yes |

@@ -44,13 +44,17 @@ impl Fixture {
     }
 }
 
-/// Runs `manifestdocs` with `args` in `folder`, with `home` as the home folder.
+/// Runs `manifestdocs` with `args` in `folder`, with `home` as the home folder. Git stops
+/// looking for a repo at `home`'s parent, so a temp folder inside some other repo can't
+/// change what a fixture reports.
 pub fn run_in(folder: &Path, home: &Path, args: &[&str]) -> Run {
+    let ceiling = home.parent().unwrap_or(home);
     let output = Command::new(env!("CARGO_BIN_EXE_manifestdocs"))
         .args(args)
         .current_dir(folder)
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("GIT_CEILING_DIRECTORIES", ceiling)
         .output()
         .expect("the binary runs");
     Run {

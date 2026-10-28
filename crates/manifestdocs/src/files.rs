@@ -28,11 +28,26 @@ pub fn read_config(tree_root: &Path, cwd: &Path) -> Result<TreeConfig> {
 /// checking it. Supporting docs are listed but not read, so one that isn't UTF-8 can't stop
 /// `tree` or `show`.
 pub fn tree(roots: &Roots, cwd: &Path) -> Result<Tree> {
+    Ok(tree_and_snapshot(roots, cwd)?.0)
+}
+
+/// The tree, and the snapshot it was read from, which holds only the node files so far.
+pub fn tree_and_snapshot(roots: &Roots, cwd: &Path) -> Result<(Tree, Snapshot)> {
     let config = read_config(&roots.tree_root, cwd)?;
     let mut snapshot = listed(roots)?;
     let node_files = node_files_to_read(&config, &snapshot.tree_root, &snapshot.paths);
     read_into(&mut snapshot, node_files, &roots.repo_root, cwd)?;
-    Ok(read_tree(&config, &snapshot))
+    Ok((read_tree(&config, &snapshot), snapshot))
+}
+
+/// Reads the docs a node links to into `snapshot`. A doc that can't be read as UTF-8 text is
+/// skipped, so `context` lists it rather than failing.
+pub fn read_linked_docs(snapshot: &mut Snapshot, docs: &[RepoPath], roots: &Roots) {
+    for doc in docs {
+        if let Ok(text) = fs::read_to_string(roots.repo_root.join(doc.as_str())) {
+            snapshot.markdown.insert(doc.clone(), text);
+        }
+    }
 }
 
 /// Lists the repo's files and reads the tree's Markdown.
