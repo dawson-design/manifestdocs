@@ -170,7 +170,7 @@ fn statuses(raw: Option<Spanned<Vec<Spanned<String>>>>) -> Result<Vec<StatusName
     Ok(statuses)
 }
 
-fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
+pub(crate) fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
     ConfigError {
         line: u32::try_from(spanned.referenced.line())
             .ok()
@@ -179,7 +179,7 @@ fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
     }
 }
 
-fn yaml_error(error: serde_saphyr::Error) -> ConfigError {
+pub(crate) fn yaml_error(error: serde_saphyr::Error) -> ConfigError {
     ConfigError {
         line: yaml::error_line(&error),
         message: yaml::error_message(&error),

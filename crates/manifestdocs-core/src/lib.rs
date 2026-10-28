@@ -13,4 +13,5 @@ pub mod paths;
 pub mod refs;
 pub mod slug;
 pub mod tree;
+pub mod workspace;
 mod yaml;
