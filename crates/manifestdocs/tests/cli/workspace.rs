@@ -48,8 +48,31 @@ fn finds_the_tree_from_a_code_repo_through_the_user_config() {
 }
 
 #[test]
+fn outlines_and_shows_nodes_from_a_code_repo() {
+    let fixture = workspace_fixture("workspace-tree-show", COOKBOOK);
+
+    let tree = fixture.run("work/cookbook/cookbook-web/src", &["tree"]);
+    let show = fixture.run(
+        "work/cookbook/cookbook-web/src",
+        &["show", "../../cookbook-docs"],
+    );
+
+    assert_eq!(
+        tree.stdout,
+        "Cookbook (fd-000001, draft)  ../../cookbook-docs/cookbook.md\n"
+    );
+    assert!(
+        show.stdout
+            .starts_with("Cookbook (fd-000001, draft)\nFile: ../../cookbook-docs/cookbook.md\n"),
+        "{}",
+        show.stdout
+    );
+}
+
+#[test]
 fn uses_the_longest_workspace_that_contains_the_folder() {
-    let config = "workspaces:\n  - path: ~/work\n    tree: ~/work/notes\n  - path: ~/work/cookbook\n    tree: ~/work/cookbook/cookbook-docs\n";
+    // The longer path comes first, so a lookup that takes the last match fails.
+    let config = "workspaces:\n  - path: ~/work/cookbook\n    tree: ~/work/cookbook/cookbook-docs\n  - path: ~/work\n    tree: ~/work/notes\n";
     let fixture = workspace_fixture("workspace-longest", config);
 
     let cookbook = fixture.check("work/cookbook/cookbook-web");
