@@ -3,10 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{self, TreeConfig};
-use crate::finding::{Finding, Problem, Severity};
+use crate::finding::{Field, Finding, Problem, Severity};
+use crate::frontmatter::{self, Split};
+use crate::id::NodeId;
 use crate::layout::{Layout, NodeFile, layout};
 use crate::node::{NodeLocation, ParsedNode, read_node_file};
 use crate::paths::{RepoPath, TreePath};
+use crate::tree::tree_findings;
 
 /// The files the I/O side reads for the pure core.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -56,6 +59,8 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
         .collect();
     let mut findings = layout_findings(config, &layout, &nodes);
     findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
+    findings.extend(tree_findings(&nodes));
+    findings.extend(stray_node_ids(snapshot, &layout));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
         nodes: nodes.iter().filter(|node| node.id.is_some()).count(),
@@ -64,9 +69,36 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
 }
 
 fn read(config: &TreeConfig, snapshot: &Snapshot, file: &NodeFile) -> Option<ParsedNode> {
-    let path = snapshot.tree_root.join(file.path.as_str())?;
-    let text = snapshot.markdown.get(&path)?;
+    let text = markdown(snapshot, &file.path)?;
     read_node_file(&file.path, file.location.clone(), text, config)
+}
+
+fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
+    let path = snapshot.tree_root.join(file.as_str())?;
+    snapshot.markdown.get(&path).map(String::as_str)
+}
+
+// A node ID outside a node file usually means a folder was renamed without its node file.
+fn stray_node_ids(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
+    let node_files: BTreeSet<&TreePath> = layout.node_files.iter().map(|f| &f.path).collect();
+    let others = layout
+        .checked
+        .iter()
+        .filter(|file| !node_files.contains(file));
+    others
+        .filter_map(|file| {
+            let Split::Present(frontmatter) = frontmatter::split(markdown(snapshot, file)?) else {
+                return None;
+            };
+            let key = frontmatter.key(Field::Id.name())?;
+            let id = NodeId::parse(key.value.trim_matches(['"', '\'']))?;
+            Some(Finding {
+                file: file.clone(),
+                line: Some(key.line),
+                problem: Problem::NodeIdOutsideNodeFile(id),
+            })
+        })
+        .collect()
 }
 
 fn layout_findings(config: &TreeConfig, layout: &Layout, nodes: &[ParsedNode]) -> Vec<Finding> {

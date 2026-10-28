@@ -17,6 +17,8 @@ pub struct Layout {
     pub nested_trees: Vec<TreePath>,
     /// Markdown in this tree, outside nested trees, including decision records.
     pub markdown: Vec<TreePath>,
+    /// The Markdown that `check` inspects: the same, without decision records.
+    pub checked: Vec<TreePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,14 +46,20 @@ pub fn layout(config: &TreeConfig, tree_root: &RepoPath, paths: &BTreeSet<RepoPa
             })
         })
         .collect();
-    let markdown = files
+    let markdown: Vec<TreePath> = files
         .into_iter()
         .filter(|file| file.as_str().ends_with(".md"))
+        .collect();
+    let checked = markdown
+        .iter()
+        .filter(|file| !in_records_folder(file))
+        .cloned()
         .collect();
     Layout {
         node_files,
         nested_trees,
         markdown,
+        checked,
     }
 }
 
