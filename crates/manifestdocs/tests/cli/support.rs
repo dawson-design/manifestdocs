@@ -35,14 +35,19 @@ impl Fixture {
 
     /// Runs `manifestdocs check` from `folder`, a path relative to the fixture root.
     pub fn check(&self, folder: &str) -> Run {
-        check_in(&self.root.join(folder), &self.root)
+        self.run(folder, &["check"])
+    }
+
+    /// Runs `manifestdocs` with `args` from `folder`, with the fixture root as the home folder.
+    pub fn run(&self, folder: &str, args: &[&str]) -> Run {
+        run_in(&self.root.join(folder), &self.root, args)
     }
 }
 
-/// Runs `manifestdocs check` in `folder`, with `home` as the home folder.
-pub fn check_in(folder: &Path, home: &Path) -> Run {
+/// Runs `manifestdocs` with `args` in `folder`, with `home` as the home folder.
+pub fn run_in(folder: &Path, home: &Path, args: &[&str]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_manifestdocs"))
-        .arg("check")
+        .args(args)
         .current_dir(folder)
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
