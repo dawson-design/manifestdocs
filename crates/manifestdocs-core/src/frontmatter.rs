@@ -1,5 +1,10 @@
 //! The YAML block between `---` lines at the top of a Markdown file.
 
+use std::collections::BTreeMap;
+use std::fmt;
+
+use serde::de::{Deserialize, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
+
 /// The YAML block always starts on the file's second line.
 pub const FIRST_YAML_LINE: u32 = 2;
 
@@ -87,9 +92,11 @@ fn keys(yaml: &str) -> Vec<Key> {
     lines.filter_map(|(line, text)| key(line, text)).collect()
 }
 
-// A top-level key starts the line, so indented, list and comment lines are skipped.
+// A top-level key starts the line, so indented, list and comment lines are skipped. YAML
+// also allows a quoted key and spaces before the colon.
 fn key(line: u32, text: &str) -> Option<Key> {
     let (name, value) = text.split_once(':')?;
+    let name = unquote(name.trim_end());
     let starts_well = name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_');
     let name_chars = name
         .chars()
@@ -101,6 +108,98 @@ fn key(line: u32, text: &str) -> Option<Key> {
         value: value.trim().to_owned(),
         double_quoted: value.trim_start().starts_with('"'),
     })
+}
+
+fn unquote(name: &str) -> &str {
+    let quoted = ['"', '\''].into_iter().find_map(|quote| {
+        let inner = name.strip_prefix(quote)?;
+        inner.strip_suffix(quote)
+    });
+    quoted.unwrap_or(name)
+}
+
+/// One frontmatter value, read without assuming its field's type, so each field's type can
+/// be checked on its own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Value {
+    Null,
+    Text(String),
+    /// A list of scalars, each as text.
+    List(Vec<String>),
+    /// A mapping, or a list holding anything but scalars.
+    Other,
+}
+
+/// The YAML's top-level fields, or the parser's error. An empty block has no fields.
+pub fn values(yaml: &str) -> Result<BTreeMap<String, Value>, serde_saphyr::Error> {
+    let values: Option<BTreeMap<String, Value>> = serde_saphyr::from_str(yaml)?;
+    Ok(values.unwrap_or_default())
+}
+
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(ValueVisitor)
+    }
+}
+
+// Numbers and booleans are read back as text, since every node field is text or a list of it.
+struct ValueVisitor;
+
+impl<'de> Visitor<'de> for ValueVisitor {
+    type Value = Value;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a frontmatter value")
+    }
+
+    fn visit_unit<E>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_none<E>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_str<E>(self, text: &str) -> Result<Value, E> {
+        Ok(Value::Text(text.to_owned()))
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Value, E> {
+        Ok(Value::Text(value.to_string()))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Value, E> {
+        Ok(Value::Text(value.to_string()))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Value, E> {
+        Ok(Value::Text(value.to_string()))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Value, E> {
+        Ok(Value::Text(value.to_string()))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        let mut items = Vec::new();
+        let mut scalars_only = true;
+        while let Some(item) = seq.next_element::<Value>()? {
+            match item {
+                Value::Text(text) => items.push(text),
+                _ => scalars_only = false,
+            }
+        }
+        Ok(if scalars_only {
+            Value::List(items)
+        } else {
+            Value::Other
+        })
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+        Ok(Value::Other)
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +260,39 @@ mod tests {
                 ("work", 8, false),
             ]
         );
+    }
+
+    #[test]
+    fn scans_quoted_keys_and_keys_with_a_space_before_the_colon() {
+        let names: Vec<String> = present("---\n\"id\": x\ntitle : y\n'work': []\n---\n")
+            .keys
+            .into_iter()
+            .map(|key| key.name)
+            .collect();
+
+        assert_eq!(names, ["id", "title", "work"]);
+    }
+
+    #[test]
+    fn reads_each_value_without_assuming_its_type() {
+        let yaml = "id: fd-000001\ncount: 123456\nflag: true\nempty:\nrepos: [a/b, 7]\nnested: {a: b}\nmixed: [a, [b]]\n";
+        let values = values(yaml).unwrap();
+        let text = |s: &str| Value::Text(s.to_owned());
+
+        assert_eq!(values["id"], text("fd-000001"));
+        assert_eq!(values["count"], text("123456"));
+        assert_eq!(values["flag"], text("true"));
+        assert_eq!(values["empty"], Value::Null);
+        assert_eq!(values["repos"], Value::List(vec!["a/b".into(), "7".into()]));
+        assert_eq!(values["nested"], Value::Other);
+        assert_eq!(values["mixed"], Value::Other);
+    }
+
+    #[test]
+    fn reads_an_empty_or_comment_only_block_as_no_fields() {
+        assert_eq!(values("").unwrap(), BTreeMap::new());
+        assert_eq!(values("# just a note\n").unwrap(), BTreeMap::new());
+        assert!(values("id: [a\n").is_err());
+        assert!(values("just text\n").is_err());
     }
 }

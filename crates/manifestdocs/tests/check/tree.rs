@@ -87,6 +87,7 @@ fn reports_a_node_id_in_a_file_that_isnt_a_node_file() {
             ("demo.md", &root),
             ("search-v2/search.md", &renamed),
             ("notes.md", "---\nid: \"fd-000009\"\n---\n# Notes\n"),
+            ("old-name/ranking.md", "---\nid: fd-00000a # renamed\n---\n"),
         ],
     );
 
@@ -95,8 +96,9 @@ fn reports_a_node_id_in_a_file_that_isnt_a_node_file() {
     assert_eq!(
         run.stdout,
         "notes.md:2: error: node ID `fd-000009` in a file that isn't named after its folder\n\
+         old-name/ranking.md:2: error: node ID `fd-00000a` in a file that isn't named after its folder\n\
          search-v2/search.md:2: error: node ID `fd-000002` in a file that isn't named after its folder\n\
-         \n1 node: 2 errors\n"
+         \n1 node: 3 errors\n"
     );
     assert_eq!(run.code, 1);
 }

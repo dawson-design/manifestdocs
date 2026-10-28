@@ -2,12 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
-use serde::de::IgnoredAny;
-
 use crate::config::{SUPERSEDED, StatusName, TreeConfig};
 use crate::finding::{Field, Finding, Problem};
-use crate::frontmatter::{self, FIRST_YAML_LINE, Frontmatter, Key, Split};
+use crate::frontmatter::{self, FIRST_YAML_LINE, Frontmatter, Key, Split, Value};
 use crate::id::NodeId;
 use crate::paths::TreePath;
 use crate::refs::{IssueRef, RepoRef};
@@ -63,17 +60,6 @@ impl ParsedNode {
     }
 }
 
-#[derive(Deserialize)]
-struct RawNode {
-    id: Option<String>,
-    title: Option<String>,
-    status: Option<String>,
-    summary: Option<String>,
-    repos: Option<Vec<String>>,
-    work: Option<Vec<String>>,
-    superseded_by: Option<String>,
-}
-
 /// Problems that belong to the whole block, such as a missing field, point at the opening `---`.
 const OPENING_LINE: u32 = 1;
 
@@ -95,18 +81,25 @@ pub fn read_node_file(
     text: &str,
     config: &TreeConfig,
 ) -> Option<ParsedNode> {
-    let frontmatter = match frontmatter::split(text) {
-        Split::Absent => return None,
+    match frontmatter::split(text) {
+        Split::Absent => None,
         Split::Unclosed => {
             let problem = Problem::UnparsableFrontmatter("no closing `---` line".into());
-            return Some(rejected(file, location, problem));
+            Some(rejected(file, location, problem))
         }
-        Split::Present(frontmatter) => frontmatter,
-    };
-    if frontmatter.key(Field::Id.name()).is_none() {
-        return Some(rejected(file, location, Problem::NodeFileWithoutId));
+        Split::Present(frontmatter) => Some(parse_node(file, location, &frontmatter, config)),
     }
-    Some(parse_node(file, location, &frontmatter, config))
+}
+
+/// The node ID a Markdown file's frontmatter declares, whether or not it's a node file.
+pub fn declared_id(frontmatter: &Frontmatter) -> Option<NodeId> {
+    match frontmatter::values(frontmatter.yaml) {
+        Ok(values) => match values.get(Field::Id.name()) {
+            Some(Value::Text(text)) => NodeId::parse(text),
+            _ => None,
+        },
+        Err(_) => scanned_id(frontmatter),
+    }
 }
 
 fn rejected(file: &TreePath, location: NodeLocation, problem: Problem) -> ParsedNode {
@@ -136,14 +129,15 @@ fn parse_node(
         frontmatter,
         findings: Vec::new(),
     };
-    reader.scan_keys();
-    let (id, node) = match reader.read_raw() {
-        Some(raw) => {
-            let id = reader.id(raw.id.clone());
-            let node = reader.node(raw, id.clone(), location.clone(), config);
-            (id, node)
+    let (id, node) = match frontmatter::values(frontmatter.yaml) {
+        Ok(values) if !values.contains_key(Field::Id.name()) => {
+            return rejected(file, location, Problem::NodeFileWithoutId);
         }
-        None => (scanned_id(frontmatter), None),
+        Ok(values) => reader.fields(&values, location.clone(), config),
+        Err(error) => {
+            reader.unparsable(&error);
+            (scanned_id(frontmatter), None)
+        }
     };
     ParsedNode {
         file: file.clone(),
@@ -158,7 +152,12 @@ fn parse_node(
 // When the YAML doesn't parse, the scanned `id` still lets references to the node resolve.
 fn scanned_id(frontmatter: &Frontmatter) -> Option<NodeId> {
     let key = frontmatter.key(Field::Id.name())?;
-    NodeId::parse(key.value.trim_matches(['"', '\'']))
+    let without_comment = key.value.split(" #").next().unwrap_or_default();
+    NodeId::parse(without_comment.trim().trim_matches(['"', '\'']))
+}
+
+fn value(values: &BTreeMap<String, Value>, field: Field) -> Option<&Value> {
+    values.get(field.name())
 }
 
 /// Collects every problem in one node file's frontmatter.
@@ -182,66 +181,56 @@ impl Reader<'_> {
         self.report(key.map_or(OPENING_LINE, |key| key.line), problem);
     }
 
-    fn scan_keys(&mut self) {
-        let frontmatter = self.frontmatter;
-        for key in &frontmatter.keys {
-            match Field::from_name(&key.name) {
-                Some(field @ (Field::Title | Field::Summary)) if !key.double_quoted => {
-                    self.report(key.line, Problem::UnquotedField(field));
-                }
-                Some(_) => {}
-                None => self.report(key.line, Problem::UnknownField(key.name.clone())),
-            }
-        }
+    // The quoting check still runs, since a scan of the text doesn't need the YAML to parse.
+    fn unparsable(&mut self, error: &serde_saphyr::Error) {
+        let problem = Problem::UnparsableFrontmatter(yaml::error_message(error));
+        self.report(file_line(error), problem);
+        self.check_quoting(Field::Title);
+        self.check_quoting(Field::Summary);
     }
 
-    // A mapping that parses but doesn't fit `RawNode` has a field of the wrong type.
-    fn read_raw(&mut self) -> Option<RawNode> {
-        let yaml = self.frontmatter.yaml;
-        if let Err(error) = serde_saphyr::from_str::<BTreeMap<String, IgnoredAny>>(yaml) {
-            let problem = Problem::UnparsableFrontmatter(yaml::error_message(&error));
-            self.report(file_line(&error), problem);
-            return None;
+    fn fields(
+        &mut self,
+        values: &BTreeMap<String, Value>,
+        location: NodeLocation,
+        config: &TreeConfig,
+    ) -> (Option<NodeId>, Option<Node>) {
+        for name in values
+            .keys()
+            .filter(|name| Field::from_name(name).is_none())
+        {
+            let line = self
+                .frontmatter
+                .key(name)
+                .map_or(OPENING_LINE, |key| key.line);
+            self.report(line, Problem::UnknownField(name.clone()));
         }
-        serde_saphyr::from_str::<RawNode>(yaml)
-            .map_err(|error| self.report_wrong_type(&error))
-            .ok()
-    }
-
-    fn report_wrong_type(&mut self, error: &serde_saphyr::Error) {
-        let line = file_line(error);
-        let owner = self.frontmatter.keys.iter().rfind(|key| key.line <= line);
-        match owner.and_then(|key| Some((Field::from_name(&key.name)?, key.line))) {
-            Some((field, key_line)) => {
-                let expected = field.expected();
-                self.report(key_line, Problem::WrongType { field, expected });
-            }
-            None => self.report(
-                line,
-                Problem::UnparsableFrontmatter(yaml::error_message(error)),
-            ),
-        }
+        let id = self.id(value(values, Field::Id));
+        let node = self.node(values, id.clone(), location, config);
+        (id, node)
     }
 
     fn node(
         &mut self,
-        raw: RawNode,
+        values: &BTreeMap<String, Value>,
         id: Option<NodeId>,
         location: NodeLocation,
         config: &TreeConfig,
     ) -> Option<Node> {
-        let title = self.text(Field::Title, raw.title);
-        let summary = self.text(Field::Summary, raw.summary);
-        let status = self.status(raw.status, raw.superseded_by, id.as_ref(), config);
+        let title = self.quoted_text(Field::Title, values);
+        let summary = self.quoted_text(Field::Summary, values);
+        let status = self.status(values, id.as_ref(), config);
+        let repos = value(values, Field::Repos);
         let repos = self.list(
             Field::Repos,
-            raw.repos,
+            repos,
             RepoRef::parse,
             Problem::MalformedRepoRef,
         );
+        let work = value(values, Field::Work);
         let work = self.list(
             Field::Work,
-            raw.work,
+            work,
             IssueRef::parse,
             Problem::MalformedIssueRef,
         );
@@ -257,55 +246,103 @@ impl Reader<'_> {
         })
     }
 
-    fn id(&mut self, raw: Option<String>) -> Option<NodeId> {
-        let Some(text) = raw else {
-            self.report_field(Field::Id, Problem::MissingField(Field::Id));
-            return None;
-        };
-        let id = NodeId::parse(&text);
+    fn id(&mut self, value: Option<&Value>) -> Option<NodeId> {
+        let text = self.text(Field::Id, value)?;
+        let id = NodeId::parse(text.as_str());
         if id.is_none() {
-            self.report_field(Field::Id, Problem::MalformedId(text));
+            self.report_field(Field::Id, Problem::MalformedId(text.0));
         }
         id
     }
 
-    fn text(&mut self, field: Field, raw: Option<String>) -> Option<NonEmptyString> {
-        let Some(text) = raw else {
-            self.report_field(field, Problem::MissingField(field));
-            return None;
-        };
-        let text = NonEmptyString::new(text);
-        if text.is_none() {
-            self.report_field(field, Problem::EmptyField(field));
+    fn quoted_text(
+        &mut self,
+        field: Field,
+        values: &BTreeMap<String, Value>,
+    ) -> Option<NonEmptyString> {
+        let value = value(values, field);
+        if matches!(value, Some(Value::Text(_))) {
+            self.check_quoting(field);
         }
-        text
+        self.text(field, value)
+    }
+
+    // A value that starts on the next line can't be judged from the key's line, so it's left.
+    fn check_quoting(&mut self, field: Field) {
+        let Some(key) = self.frontmatter.key(field.name()) else {
+            return;
+        };
+        if !key.value.is_empty() && !key.double_quoted {
+            self.report(key.line, Problem::UnquotedField(field));
+        }
+    }
+
+    fn text(&mut self, field: Field, value: Option<&Value>) -> Option<NonEmptyString> {
+        let problem = match value {
+            Some(Value::Text(text)) => match NonEmptyString::new(text.clone()) {
+                Some(text) => return Some(text),
+                None => Problem::EmptyField(field),
+            },
+            None => Problem::MissingField(field),
+            Some(Value::Null) => Problem::EmptyField(field),
+            Some(Value::List(_) | Value::Other) => Problem::WrongType {
+                field,
+                expected: field.expected(),
+            },
+        };
+        self.report_field(field, problem);
+        None
+    }
+
+    /// `Err` when the value has the wrong type, which is reported.
+    fn optional_text(&mut self, field: Field, value: Option<&Value>) -> Result<Option<String>, ()> {
+        match value {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Text(text)) => Ok(Some(text.clone())),
+            Some(Value::List(_) | Value::Other) => {
+                let expected = field.expected();
+                self.report_field(field, Problem::WrongType { field, expected });
+                Err(())
+            }
+        }
     }
 
     fn list<T>(
         &mut self,
         field: Field,
-        raw: Option<Vec<String>>,
+        value: Option<&Value>,
         parse: impl Fn(&str) -> Option<T>,
         malformed: impl Fn(String) -> Problem,
     ) -> Vec<T> {
-        let mut values = Vec::new();
-        for text in raw.unwrap_or_default() {
-            match parse(&text) {
-                Some(value) => values.push(value),
-                None => self.report_field(field, malformed(text)),
+        let items = match value {
+            None | Some(Value::Null) => return Vec::new(),
+            Some(Value::List(items)) => items,
+            Some(Value::Text(_) | Value::Other) => {
+                let expected = field.expected();
+                self.report_field(field, Problem::WrongType { field, expected });
+                return Vec::new();
+            }
+        };
+        let mut parsed = Vec::new();
+        for text in items {
+            match parse(text) {
+                Some(item) => parsed.push(item),
+                None => self.report_field(field, malformed(text.clone())),
             }
         }
-        values
+        parsed
     }
 
     fn status(
         &mut self,
-        raw: Option<String>,
-        superseded_by: Option<String>,
+        values: &BTreeMap<String, Value>,
         id: Option<&NodeId>,
         config: &TreeConfig,
     ) -> Option<NodeStatus> {
-        let status = self.text(Field::Status, raw)?;
+        let status = self.text(Field::Status, value(values, Field::Status));
+        let superseded_by = value(values, Field::SupersededBy);
+        let superseded_by = self.optional_text(Field::SupersededBy, superseded_by);
+        let (status, superseded_by) = (status?, superseded_by.ok()?);
         if status.as_str() == SUPERSEDED {
             return self.replacement(superseded_by, id);
         }
