@@ -166,3 +166,58 @@ fn reads_valid_nodes_with_crlf_endings_a_byte_order_mark_or_a_replacement() {
         assert_eq!(run.code, 0, "{name}");
     }
 }
+
+#[test]
+fn reads_an_id_however_the_yaml_writes_it() {
+    let cases = [
+        (
+            "space-before-colon",
+            "---\nid : fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+        ),
+        (
+            "quoted-key",
+            "---\n\"id\": fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+        ),
+        (
+            "flow-mapping",
+            "---\n{id: fd-000002, title: \"Feature\", status: draft, summary: \"Feature summary.\"}\n---\n",
+        ),
+        (
+            "comment-after-id",
+            "---\nid: fd-000002 # renamed from search\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+        ),
+    ];
+    for (name, feature) in cases {
+        let run = check_feature(name, feature);
+        assert_eq!(run.stdout, "2 nodes: no problems\n", "{name}");
+        assert_eq!(run.code, 0, "{name}");
+    }
+}
+
+#[test]
+fn reports_every_field_problem_when_one_field_has_the_wrong_type() {
+    let feature = "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: live\nsummary: \"Feature summary.\"\nrepos: acme/cookbook-web\nwork: acme/cookbook-docs#41\n---\n";
+
+    let run = check_feature("several-problems", feature);
+
+    assert_eq!(
+        run.stdout,
+        "feature/feature.md:4: error: status `live` isn't in `statuses` in manifestdocs.yaml\n\
+         feature/feature.md:6: error: `repos` must be a list\n\
+         feature/feature.md:7: error: `work` must be a list\n\
+         \n2 nodes: 3 errors\n"
+    );
+}
+
+#[test]
+fn reports_a_blank_value_once_and_accepts_a_value_on_the_next_line() {
+    let feature =
+        "---\nid: fd-000002\ntitle:\nstatus: draft\nsummary:\n  \"Feature summary.\"\n---\n";
+
+    let run = check_feature("blank-and-next-line", feature);
+
+    assert_eq!(
+        run.stdout,
+        "feature/feature.md:3: error: `title` is empty\n\n2 nodes: 1 error\n"
+    );
+}

@@ -5,11 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::config::{self, TreeConfig};
 use crate::finding::{Field, Finding, Problem, Severity};
 use crate::frontmatter::{self, Split};
-use crate::id::NodeId;
 use crate::layout::{Layout, NodeFile, layout};
 use crate::link::{LinkTarget, Targets, resolve};
 use crate::markdown::{Link, outline};
-use crate::node::{NodeLocation, ParsedNode, read_node_file};
+use crate::node::{NodeLocation, ParsedNode, declared_id, read_node_file};
 use crate::paths::{RepoPath, TreePath};
 use crate::tree::tree_findings;
 
@@ -187,11 +186,11 @@ fn stray_node_ids(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
             let Split::Present(frontmatter) = frontmatter::split(markdown(snapshot, file)?) else {
                 return None;
             };
-            let key = frontmatter.key(Field::Id.name())?;
-            let id = NodeId::parse(key.value.trim_matches(['"', '\'']))?;
+            let id = declared_id(&frontmatter)?;
+            let key = frontmatter.key(Field::Id.name());
             Some(Finding {
                 file: file.clone(),
-                line: Some(key.line),
+                line: Some(key.map_or(1, |key| key.line)),
                 problem: Problem::NodeIdOutsideNodeFile(id),
             })
         })
