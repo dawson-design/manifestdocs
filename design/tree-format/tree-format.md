@@ -81,7 +81,7 @@ to supporting docs such as the [ranking rules](ranking-rules.md) and the
 | `work` | No | Top-level work items for the node. Their sub-issues link through the hierarchy |
 | `superseded_by` | When superseded | ID of the replacing node |
 
-`title` and `summary` are always double-quoted. An unquoted `: ` breaks the YAML, an unquoted ` #` silently cuts the value short, and a bare `true` or `null` isn't text. `check` warns about unknown fields, so teams can add their own while typos still show.
+`title` and `summary` are always double-quoted. An unquoted `: ` breaks the YAML, an unquoted ` #` silently cuts the value short, and a bare `true` or `null` isn't text. `check` warns about unknown fields, so teams can add their own while typos still show. How to write the body, including requirements and scenarios, is in [node body](node-body/node-body.md).
 
 ## Links
 
