@@ -1,0 +1,168 @@
+use crate::support::{Fixture, Run, node};
+
+/// Checks a tree with a valid root node and one feature node, `feature/feature.md`.
+fn check_feature(name: &str, feature: &str) -> Run {
+    let root = node("fd-000001", "Demo");
+    let fixture = Fixture::new(
+        name,
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("feature/feature.md", feature),
+        ],
+    );
+    fixture.check("")
+}
+
+#[test]
+fn reports_each_frontmatter_problem_at_its_line() {
+    let cases = [
+        (
+            "unquoted-title",
+            "---\nid: fd-000002\ntitle: Feature\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:3: error: `title` must be double-quoted\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "title-with-hash",
+            "---\nid: fd-000002\ntitle: Feature #2\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:3: error: `title` must be double-quoted\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "single-quoted-summary",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: 'Feature summary.'\n---\n",
+            "feature/feature.md:5: error: `summary` must be double-quoted\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "missing-summary",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\n---\n",
+            "feature/feature.md:1: error: missing `summary`\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "empty-title",
+            "---\nid: fd-000002\ntitle: \"\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:3: error: `title` is empty\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "malformed-id",
+            "---\nid: fd-12\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:2: error: malformed node ID `fd-12`: expected `fd-` and 6 lowercase hex characters\n\n1 node: 1 error\n",
+        ),
+        (
+            "repos-not-a-list",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\nrepos: acme/cookbook-web\n---\n",
+            "feature/feature.md:6: error: `repos` must be a list\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "malformed-repo",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\nrepos: [cookbook-web]\n---\n",
+            "feature/feature.md:6: error: malformed repo `cookbook-web`: expected `owner/name`\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "malformed-work-item",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\nwork:\n  - acme/cookbook-docs#x\n---\n",
+            "feature/feature.md:6: error: malformed work item `acme/cookbook-docs#x`: expected `owner/name#number`\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "unknown-status",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: live\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:4: error: status `live` isn't in `statuses` in manifestdocs.yaml\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "superseded-without-replacement",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: superseded\nsummary: \"Feature summary.\"\n---\n",
+            "feature/feature.md:4: error: status is `superseded` but `superseded_by` is missing\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "replacement-without-superseded",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\nsuperseded_by: fd-000001\n---\n",
+            "feature/feature.md:6: error: `superseded_by` is set but status isn't `superseded`\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "superseded-by-self",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: superseded\nsummary: \"Feature summary.\"\nsuperseded_by: fd-000002\n---\n",
+            "feature/feature.md:6: error: `superseded_by` names this node\n\n2 nodes: 1 error\n",
+        ),
+        (
+            "unclosed",
+            "---\nid: fd-000002\ntitle: \"Feature\"\n\n# Feature\n",
+            "feature/feature.md:1: error: frontmatter isn't valid YAML: no closing `---` line\n\n1 node: 1 error\n",
+        ),
+    ];
+    for (name, feature, expected) in cases {
+        let run = check_feature(name, feature);
+        assert_eq!(run.stdout, expected, "{name}");
+        assert_eq!(run.code, 1, "{name}");
+    }
+}
+
+#[test]
+fn reports_yaml_that_doesnt_parse_and_still_counts_the_node() {
+    let feature = "---\nid: fd-000002\nid: fd-000003\ntitle: \"Feature\"\n---\n";
+
+    let run = check_feature("duplicate-key", feature);
+
+    assert!(
+        run.stdout
+            .starts_with("feature/feature.md:3: error: frontmatter isn't valid YAML: "),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.ends_with("\n\n2 nodes: 1 error\n"),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn warns_about_unknown_fields_and_node_files_without_an_id() {
+    let cases = [
+        (
+            "unknown-field",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: draft\nsummary: \"Feature summary.\"\nowner: sam\n---\n",
+            "feature/feature.md:6: warning: unknown field `owner`\n\n2 nodes: 1 warning\n",
+        ),
+        (
+            "no-id",
+            "---\ntitle: \"Feature\"\n---\n",
+            "feature/feature.md:1: warning: node file has frontmatter but no `id`\n\n1 node: 1 warning\n",
+        ),
+    ];
+    for (name, feature, expected) in cases {
+        let run = check_feature(name, feature);
+        assert_eq!(run.stdout, expected, "{name}");
+        assert_eq!(run.code, 0, "{name}");
+    }
+}
+
+#[test]
+fn treats_a_node_file_without_frontmatter_as_a_supporting_doc() {
+    let run = check_feature("no-frontmatter", "# Feature\n");
+
+    assert_eq!(run.stdout, "1 node: no problems\n");
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn reads_valid_nodes_with_crlf_endings_a_byte_order_mark_or_a_replacement() {
+    let cases = [
+        (
+            "crlf",
+            "---\r\nid: fd-000002\r\ntitle: \"Feature\"\r\nstatus: draft\r\nsummary: \"Feature summary.\"\r\n---\r\n",
+        ),
+        (
+            "bom",
+            "\u{feff}---\nid: fd-000002\ntitle: \"Feature\"\nstatus: approved\nsummary: \"Feature summary.\"\n---\n",
+        ),
+        (
+            "superseded",
+            "---\nid: fd-000002\ntitle: \"Feature\"\nstatus: superseded\nsummary: \"Feature summary.\"\nsuperseded_by: fd-000001\nrepos: [acme/cookbook-web]\nwork: [acme/cookbook-docs#41]\n---\n",
+        ),
+    ];
+    for (name, feature) in cases {
+        let run = check_feature(name, feature);
+        assert_eq!(run.stdout, "2 nodes: no problems\n", "{name}");
+        assert_eq!(run.code, 0, "{name}");
+    }
+}
