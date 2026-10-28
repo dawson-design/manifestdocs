@@ -94,11 +94,7 @@ mod tests {
 
     #[test]
     fn parses_repos_as_owner_and_name() {
-        for text in [
-            "dawson-design/manifestdocs",
-            "example-org/eeb.docs",
-            "a/b_c",
-        ] {
+        for text in ["acme/cookbook-docs", "example-org/cookbook.docs", "a/b_c"] {
             assert_eq!(
                 RepoRef::parse(text).map(|r| r.to_string()),
                 Some(text.into()),
@@ -121,14 +117,14 @@ mod tests {
     #[test]
     fn parses_issues_with_a_positive_number() {
         assert_eq!(
-            IssueRef::parse("example-org/eeb-docs#41").map(|i| i.to_string()),
-            Some("example-org/eeb-docs#41".into())
+            IssueRef::parse("example-org/cookbook-docs#41").map(|i| i.to_string()),
+            Some("example-org/cookbook-docs#41".into())
         );
         for text in [
-            "example-org/eeb-docs",
-            "example-org/eeb-docs#",
-            "example-org/eeb-docs#0",
-            "example-org/eeb-docs#+4",
+            "example-org/cookbook-docs",
+            "example-org/cookbook-docs#",
+            "example-org/cookbook-docs#0",
+            "example-org/cookbook-docs#+4",
             "#41",
         ] {
             assert_eq!(IssueRef::parse(text), None, "{text}");
@@ -138,7 +134,7 @@ mod tests {
     #[test]
     fn parses_host_names() {
         assert!(Host::parse("github.com").is_some());
-        assert!(Host::parse("va.ghe.com").is_some());
+        assert!(Host::parse("ghe.example.com").is_some());
         for text in ["", "https://github.com", ".github.com", "github.com/"] {
             assert_eq!(Host::parse(text), None, "{text}");
         }

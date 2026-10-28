@@ -184,9 +184,9 @@ mod tests {
 
     #[test]
     fn fills_in_defaults_when_only_the_name_is_given() {
-        let config = parse("name: event-bus\n").unwrap();
+        let config = parse("name: cookbook\n").unwrap();
 
-        assert_eq!(config.name.as_str(), "event-bus");
+        assert_eq!(config.name.as_str(), "cookbook");
         assert_eq!(config.github, None);
         assert_eq!(config.merge, MergeMode::Review);
         assert_eq!(status_names(&config), ["draft", "approved"]);
@@ -194,12 +194,12 @@ mod tests {
 
     #[test]
     fn reads_every_setting() {
-        let text = "name: manifest-docs\ngithub:\n  host: github.com\n  docs_repo: dawson-design/manifestdocs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, superseded]\n";
+        let text = "name: manifest-docs\ngithub:\n  host: github.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, superseded]\n";
         let config = parse(text).unwrap();
 
         let github = config.github.as_ref().unwrap();
         assert_eq!(github.host.to_string(), "github.com");
-        assert_eq!(github.docs_repo.to_string(), "dawson-design/manifestdocs");
+        assert_eq!(github.docs_repo.to_string(), "acme/cookbook-docs");
         assert_eq!(config.merge, MergeMode::Proposed);
         assert_eq!(status_names(&config), ["draft", "live"]);
     }
