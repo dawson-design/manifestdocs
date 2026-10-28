@@ -1,8 +1,8 @@
 ---
 id: fd-54bf4e
-title: Agent context
+title: "Agent context"
 status: draft
-summary: Assembles a node's or an issue's context for a coding agent within an approximate token budget.
+summary: "Assembles a node's or an issue's context for a coding agent within an approximate token budget."
 ---
 
 # Agent context

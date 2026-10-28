@@ -1,8 +1,8 @@
 ---
 id: fd-fd80a6
-title: Claude Code plugin
+title: "Claude Code plugin"
 status: draft
-summary: Skills, commands and hooks that call the binary from Claude Code and other harnesses that load skills.
+summary: "Skills, commands and hooks that call the binary from Claude Code and other harnesses that load skills."
 ---
 
 # Claude Code plugin

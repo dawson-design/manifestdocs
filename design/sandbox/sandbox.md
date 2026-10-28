@@ -1,8 +1,8 @@
 ---
 id: fd-630023
-title: Sandbox use
+title: "Sandbox use"
 status: draft
-summary: How a software factory builds context on the host and collects decision records from sandboxed runs.
+summary: "How a software factory builds context on the host and collects decision records from sandboxed runs."
 ---
 
 # Sandbox use

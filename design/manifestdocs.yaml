@@ -4,4 +4,4 @@ github:
   docs_repo: dawson-design/manifestdocs
 decisions:
   merge: review
-statuses: [draft, approved, superseded]
+statuses: [draft, approved]
