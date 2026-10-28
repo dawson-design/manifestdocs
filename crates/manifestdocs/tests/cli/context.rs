@@ -95,6 +95,36 @@ fn assembles_a_node_with_its_ancestors_linked_docs_and_children() {
     assert_eq!(run.code, 0);
 }
 
+/// The plugin's skills run `context` from the repo root, through the pointer, with
+/// `--format md` and a budget; paths then read from the repo root.
+#[test]
+fn runs_through_a_pointer_as_the_skills_call_it() {
+    let fixture = cookbook("context-pointer", ENGINE);
+    fs::create_dir_all(fixture.path(".manifestdocs")).unwrap();
+    fs::write(fixture.path(".manifestdocs/config.yaml"), "tree: docs\n").unwrap();
+
+    let in_tree = fixture.run("docs", &["context", "fd-7c2e41"]);
+    let skills = fixture.run(
+        "",
+        &["context", "fd-7c2e41", "--format", "md", "--budget", "8000"],
+    );
+
+    let expected = estimate(&in_tree)
+        .0
+        .replace("Path: recipes", "Path: docs/recipes")
+        .replace("### recipes/", "### docs/recipes/")
+        .replace("### ../adr/", "### adr/")
+        .replace(
+            "- recipes/search/flow.png",
+            "- docs/recipes/search/flow.png",
+        )
+        .replace("- glossary.md", "- docs/glossary.md");
+    let (before, size) = estimate(&skills);
+    assert_eq!(before, expected);
+    assert!(size.ends_with(" of 8,000 tokens"), "{size}");
+    assert_eq!(skills.code, 0);
+}
+
 #[test]
 fn includes_every_ancestor_in_full_even_one_with_errors() {
     let fixture = cookbook("context-ancestors", ENGINE);
