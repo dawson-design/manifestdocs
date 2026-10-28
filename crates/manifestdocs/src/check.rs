@@ -13,7 +13,8 @@ use crate::files;
 use crate::locate::locate;
 use crate::report::{relative, render, write_stdout};
 
-pub fn run(path: Option<&str>) -> Result<ExitCode> {
+/// With `strict`, warnings fail the check as errors do.
+pub fn run(path: Option<&str>, strict: bool) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let start = match path {
         Some(path) => start_folder(path, &cwd)?,
@@ -28,7 +29,8 @@ pub fn run(path: Option<&str>) -> Result<ExitCode> {
     files::read_anchor_targets(&mut snapshot, &roots, &config, &cwd)?;
     let report = check(&config, &snapshot);
     write_stdout(&render(&report, &roots.tree_root, &cwd))?;
-    Ok(if report.has_errors() {
+    let failed = report.has_errors() || (strict && !report.findings.is_empty());
+    Ok(if failed {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

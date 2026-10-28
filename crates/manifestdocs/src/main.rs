@@ -26,6 +26,9 @@ enum Command {
     Check {
         /// A file or folder: check the tree that contains it [default: the current folder]
         path: Option<String>,
+        /// Exit with 1 on warnings too, such as to gate CI on them
+        #[arg(long)]
+        strict: bool,
     },
     /// Print an outline of the nodes, with their IDs, statuses and files
     Tree {
@@ -66,7 +69,7 @@ enum Format {
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
-        Command::Check { path } => check::run(path.as_deref()),
+        Command::Check { path, strict } => check::run(path.as_deref(), strict),
         Command::Tree { path, depth } => tree::run(path.as_deref(), depth),
         Command::Show { node } => show::run(&node),
         Command::Context {

@@ -106,7 +106,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `show <id or path>` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
 | `check [path]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder |
 
-Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
+Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, or on warnings too with `--strict`, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
 
 ## Use a tree from a code repo
 

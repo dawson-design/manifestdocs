@@ -7,7 +7,7 @@ summary: "Validates a tree and its decision records, so `check` can gate docs PR
 
 # Checks
 
-`mfd check` exits non-zero on errors so it can gate CI on the docs repo. The gate blocks merges only when the docs repo's branch rules require the check.
+`mfd check` exits non-zero on errors so it can gate CI on the docs repo. With `--strict`, warnings fail it too, for a team that wants CI to hold the tree to them, such as the node size limit. The gate blocks merges only when the docs repo's branch rules require the check.
 
 - Every node has valid frontmatter, a unique ID, and a double-quoted `title` and `summary`.
 - Every reference and link resolves: node IDs, `superseded_by`, and local Markdown links and their anchors in node bodies and supporting docs.
