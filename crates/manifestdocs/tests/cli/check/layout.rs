@@ -140,7 +140,7 @@ fn fails_on_an_invalid_config_with_its_line() {
 
     assert_eq!(
         run.stderr,
-        "error: manifestdocs.yaml:2: unknown field `statues`, expected one of name, github, decisions, statuses\n"
+        "error: manifestdocs.yaml:2: unknown field `statues`, expected one of name, github, decisions, statuses, node_tokens\n"
     );
     assert_eq!(run.stdout, "");
     assert_eq!(run.code, 2);

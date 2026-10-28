@@ -1,5 +1,7 @@
 //! `manifestdocs.yaml`, the file that marks a tree's root.
 
+use std::num::NonZeroU32;
+
 use serde::Deserialize;
 use serde_saphyr::Spanned;
 use thiserror::Error;
@@ -14,6 +16,8 @@ pub struct TreeConfig {
     pub github: Option<GitHubConfig>,
     pub merge: MergeMode,
     pub statuses: Vec<StatusName>,
+    /// The estimated tokens a node's body can have before `check` warns.
+    pub node_tokens: NonZeroU32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +57,7 @@ struct RawConfig {
     github: Option<RawGitHub>,
     decisions: Option<RawDecisions>,
     statuses: Option<Spanned<Vec<Spanned<String>>>>,
+    node_tokens: Option<Spanned<u32>>,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +76,7 @@ struct RawDecisions {
 /// The file that marks a tree's root.
 pub const FILE_NAME: &str = "manifestdocs.yaml";
 const DEFAULT_STATUSES: [&str; 2] = ["draft", "approved"];
+const DEFAULT_NODE_TOKENS: NonZeroU32 = NonZeroU32::new(2_500).unwrap();
 pub const SUPERSEDED: &str = "superseded";
 
 pub fn parse(text: &str) -> Result<TreeConfig, ConfigError> {
@@ -80,6 +86,7 @@ pub fn parse(text: &str) -> Result<TreeConfig, ConfigError> {
         github: raw.github.map(github).transpose()?,
         merge: raw.decisions.and_then(|d| d.merge).unwrap_or_default(),
         statuses: statuses(raw.statuses)?,
+        node_tokens: node_tokens(raw.node_tokens)?,
     })
 }
 
@@ -170,6 +177,13 @@ fn statuses(raw: Option<Spanned<Vec<Spanned<String>>>>) -> Result<Vec<StatusName
     Ok(statuses)
 }
 
+fn node_tokens(raw: Option<Spanned<u32>>) -> Result<NonZeroU32, ConfigError> {
+    let Some(raw) = raw else {
+        return Ok(DEFAULT_NODE_TOKENS);
+    };
+    NonZeroU32::new(raw.value).ok_or_else(|| at(&raw, "`node_tokens` must be at least 1".into()))
+}
+
 pub(crate) fn at<T>(spanned: &Spanned<T>, message: String) -> ConfigError {
     ConfigError {
         line: u32::try_from(spanned.referenced.line())
@@ -202,11 +216,12 @@ mod tests {
         assert_eq!(config.github, None);
         assert_eq!(config.merge, MergeMode::Review);
         assert_eq!(status_names(&config), ["draft", "approved"]);
+        assert_eq!(config.node_tokens.get(), 2_500);
     }
 
     #[test]
     fn reads_every_setting() {
-        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\n";
+        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\nnode_tokens: 4000\n";
         let config = parse(text).unwrap();
 
         let github = config.github.as_ref().unwrap();
@@ -214,6 +229,7 @@ mod tests {
         assert_eq!(github.docs_repo.to_string(), "acme/cookbook-docs");
         assert_eq!(config.merge, MergeMode::Proposed);
         assert_eq!(status_names(&config), ["draft", "live"]);
+        assert_eq!(config.node_tokens.get(), 4_000);
     }
 
     #[test]
@@ -244,6 +260,9 @@ mod tests {
                 3,
             ),
             ("name: x\ndecisions:\n  merge: sometimes\n", 3),
+            ("name: x\nnode_tokens: 0\n", 2),
+            ("name: x\nnode_tokens: lots\n", 2),
+            ("name: x\nnode_tokens: -5\n", 2),
         ];
         for (text, line) in cases {
             let error = parse(text).unwrap_err();

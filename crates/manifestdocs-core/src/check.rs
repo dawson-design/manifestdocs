@@ -10,6 +10,7 @@ use crate::link::{LinkTarget, Targets, resolve};
 use crate::markdown::{Link, outline};
 use crate::node::{NodeLocation, ParsedNode, declared_id, read_node_file};
 use crate::paths::{RepoPath, TreePath};
+use crate::tokens::estimate;
 use crate::tree::tree_findings;
 
 /// The files the I/O side reads for the pure core.
@@ -61,6 +62,7 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     let mut findings = layout_findings(config, &layout, &nodes);
     findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
     findings.extend(tree_findings(&nodes));
+    findings.extend(oversized_nodes(config, snapshot, &nodes));
     findings.extend(stray_node_ids(snapshot, &layout));
     findings.extend(broken_links(snapshot, &layout));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
@@ -174,6 +176,24 @@ fn resolved_links(snapshot: &Snapshot, file: &TreePath) -> Vec<(Link, Option<Lin
         .map(|link| {
             let target = resolve(&link.target, &from);
             (link, target)
+        })
+        .collect()
+}
+
+// `context` includes a node and every ancestor in full, so a large node grows the context
+// of every node below it.
+fn oversized_nodes(config: &TreeConfig, snapshot: &Snapshot, nodes: &[ParsedNode]) -> Vec<Finding> {
+    let limit = config.node_tokens.get();
+    let nodes = nodes.iter().filter(|node| node.id.is_some());
+    nodes
+        .filter_map(|node| {
+            let (body, _) = frontmatter::body(markdown(snapshot, &node.file)?);
+            let tokens = estimate(body.trim());
+            (tokens > limit).then(|| Finding {
+                file: node.file.clone(),
+                line: None,
+                problem: Problem::NodeTooLarge { tokens, limit },
+            })
         })
         .collect()
 }

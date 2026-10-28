@@ -16,6 +16,7 @@ These are the types `manifestdocs-core` builds from a tree for M0: the two confi
 // manifestdocs.yaml
 struct TreeConfig {
     name: TreeName,                  // file-name-safe; names the root node file
+    node_tokens: NonZeroU32,         // default 2,500; `check` warns about a body over it on a node with child nodes
     github: Option<GitHubConfig>,    // None: work commands are off
     merge: MergeMode,                // default Review
     statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"; never empty
@@ -97,8 +98,9 @@ enum Problem {
     ReplacementNotFound(NodeId), NodeIdOutsideNodeFile(NodeId),
     BrokenLink(String), MissingAnchor { path: String, anchor: String },
     NoRootNode { expected: TreePath }, NestedTreeSkipped, UnknownField(String), NodeFileWithoutId,
+    NodeTooLarge { tokens: u32, limit: u32 },
 }
-impl Problem { fn severity(&self) -> Severity { /* the last four are warnings */ } }
+impl Problem { fn severity(&self) -> Severity { /* the last five are warnings */ } }
 ```
 
 Two rules are part of the types. A superseded node can't exist without a replacement, so parsing reports one as `SupersededWithoutReplacement`. A finding's severity comes from its problem, so no finding has the wrong severity.
