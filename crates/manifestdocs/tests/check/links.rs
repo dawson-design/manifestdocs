@@ -12,7 +12,8 @@ fn reports_broken_links_in_nodes_and_supporting_docs_at_their_lines() {
         "Demo",
         "[search](search/search.md)\n[engine ADR](../adr/0001-engine.md)\n[folder](search/)\n\
          [tips](Kitchen%20Notes/tips.md)\n[readme](/README.md)\n[site](https://example.com/gone.md)\n\
-         `[code](nope.md)`\n![logo](logo.png)\n[ref][r]\n\n[r]: search/search.md\n",
+         `[code](nope.md)`\n![logo](logo.png)\n[ref][r]\n![missing](missing.png)\n[ref2][r2]\n\n\
+         [r]: search/search.md\n[r2]: gone.md\n",
     );
     let search = node_with_body(
         "fd-000002",
@@ -43,11 +44,13 @@ fn reports_broken_links_in_nodes_and_supporting_docs_at_their_lines() {
         run.stdout,
         "broken/broken.md:3: error: `title` must be double-quoted\n\
          broken/broken.md:8: error: broken link `nowhere.md`\n\
+         demo.md:18: error: broken link `missing.png`\n\
+         demo.md:19: error: broken link `gone.md`\n\
          notes.md:1: error: broken link `missing.md`\n\
          search/search.md:9: error: broken link `ranking.md`\n\
          search/search.md:10: error: broken link `../Search/search.md`\n\
          search/search.md:11: error: broken link `../../../x.md`\n\
-         \n3 nodes: 6 errors\n"
+         \n3 nodes: 8 errors\n"
     );
     assert_eq!(run.code, 1);
 }
