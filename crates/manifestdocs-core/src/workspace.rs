@@ -137,9 +137,11 @@ mod tests {
 
     #[test]
     fn picks_the_longest_workspace_that_contains_the_folder() {
+        // The longest match comes before a shorter one for `cookbook` and after it for
+        // `cook`, so neither file order passes for the wrong reason.
         let all = [
-            workspace("/work", "/work/docs"),
             workspace("/work/cookbook", "/work/cookbook/docs"),
+            workspace("/work", "/work/docs"),
             workspace("/work/cook", "/work/cook/docs"),
         ];
         let tree = |folder: &str| {
@@ -151,6 +153,7 @@ mod tests {
             Some("/work/cookbook/docs".into())
         );
         assert_eq!(tree("/work/cookbook"), Some("/work/cookbook/docs".into()));
+        assert_eq!(tree("/work/cook/app"), Some("/work/cook/docs".into()));
         assert_eq!(tree("/work/other"), Some("/work/docs".into()));
         assert_eq!(tree("/srv"), None);
     }

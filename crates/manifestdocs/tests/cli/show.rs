@@ -9,6 +9,7 @@ fn cookbook(name: &str) -> Fixture {
     let filters = node("fd-7c2e99", "Filters");
     let search = "---\nid: fd-7c2e41\ntitle: \"Search\"\nstatus: approved\nsummary: \"Finds recipes by ingredient.\"\nrepos: [example-org/cookbook-web]\nwork: [example-org/cookbook-docs#41, example-org/cookbook-docs#58]\n---\n\n# Search\n\nRequirements, with the [ranking rules](ranking-rules.md).\n\n";
     let old = "---\nid: fd-0a0005\ntitle: \"Old search\"\nstatus: superseded\nsummary: \"Retired.\"\nsuperseded_by: fd-7c2e41\n---\n";
+    let legacy = "---\nid: fd-0a0007\ntitle: \"Legacy\"\nstatus: superseded\nsummary: \"Gone.\"\nsuperseded_by: fd-ffffff\n---\n";
     let import = "---\nid: fd-0a0006\ntitle: Import\nstatus: live\nsummary: \"Imports recipes.\"\nowner: sam\n---\n";
     Fixture::new(
         name,
@@ -28,6 +29,7 @@ fn cookbook(name: &str) -> Fixture {
             ("recipes/search/filters/notes.md", "# Notes\n"),
             ("recipes/old-search/old-search.md", old),
             ("recipes/import/import.md", import),
+            ("recipes/legacy/legacy.md", legacy),
         ],
     )
 }
@@ -92,6 +94,7 @@ fn shows_the_root_node_and_a_superseded_node() {
 
     let root = fixture.run("", &["show", "."]);
     let old = fixture.run("", &["show", "recipes/old-search"]);
+    let legacy = fixture.run("", &["show", "recipes/legacy"]);
 
     assert_eq!(
         root.stdout,
@@ -102,6 +105,13 @@ fn shows_the_root_node_and_a_superseded_node() {
         old.stdout,
         "Old search (fd-0a0005, superseded)\nFile: recipes/old-search/old-search.md\n\
          Parent: Recipes (fd-0a0002)\nSummary: Retired.\nSuperseded by: Search (fd-7c2e41)\n"
+    );
+    assert!(
+        legacy
+            .stdout
+            .ends_with("Summary: Gone.\nSuperseded by: fd-ffffff\n"),
+        "{}",
+        legacy.stdout
     );
 }
 
