@@ -10,6 +10,7 @@ use crate::link::{LinkTarget, Targets, resolve};
 use crate::markdown::{Link, outline};
 use crate::node::{NodeLocation, ParsedNode, declared_id, read_node_file};
 use crate::paths::{RepoPath, TreePath};
+use crate::record::{read_records, record_findings};
 use crate::tokens::estimate;
 use crate::tree::tree_findings;
 
@@ -65,6 +66,13 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     findings.extend(oversized_nodes(config, snapshot, &nodes));
     findings.extend(stray_node_ids(snapshot, &layout));
     findings.extend(broken_links(snapshot, &layout));
+    let records = read_records(config, snapshot);
+    findings.extend(
+        records
+            .iter()
+            .flat_map(|record| record.findings.iter().cloned()),
+    );
+    findings.extend(record_findings(&records, &nodes));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
         nodes: nodes.iter().filter(|node| node.id.is_some()).count(),
@@ -81,7 +89,7 @@ pub(crate) fn read_node(
     read_node_file(&file.path, file.location.clone(), text, config)
 }
 
-fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
+pub(crate) fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
     let path = snapshot.tree_root.join(file.as_str())?;
     snapshot.markdown.get(&path).map(String::as_str)
 }

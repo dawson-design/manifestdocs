@@ -46,7 +46,7 @@ fn reports_anchors_that_match_no_heading_inside_and_outside_the_tree() {
             ("docs/search/logo.png", "png"),
             (
                 "docs/search/decisions/2026-10-28-engine.md",
-                "---\nid: dc-0000001\n---\n\n## Decision\n",
+                "---\nid: dc-0000001\nnode: fd-000002\ntitle: \"Engine\"\nstatus: accepted\ntopic: engine\ndate: 2026-10-28\n---\n\n## Decision\n",
             ),
             ("docs/vendor/manifestdocs.yaml", "name: vendor\n"),
             ("docs/vendor/guide.md", "# Setup\n"),

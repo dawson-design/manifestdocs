@@ -71,7 +71,7 @@ impl ParsedNode {
 }
 
 /// Problems that belong to the whole block, such as a missing field, point at the opening `---`.
-const OPENING_LINE: u32 = 1;
+pub(crate) const OPENING_LINE: u32 = 1;
 
 impl NonEmptyString {
     pub fn new(text: String) -> Option<Self> {
@@ -167,24 +167,29 @@ fn parse_node(
 
 // When the YAML doesn't parse, the scanned `id` still lets references to the node resolve.
 fn scanned_id(keys: &[Key]) -> Option<NodeId> {
-    let key = keys.iter().find(|key| key.name == Field::Id.name())?;
-    let without_comment = key.value.split(" #").next().unwrap_or_default();
-    NodeId::parse(without_comment.trim().trim_matches(['"', '\'']))
+    NodeId::parse(scanned_text(keys, Field::Id)?)
 }
 
-fn value(values: &BTreeMap<String, Value>, field: Field) -> Option<&Value> {
+/// A field's value as scanned from the text, without quotes or a trailing comment.
+pub(crate) fn scanned_text(keys: &[Key], field: Field) -> Option<&str> {
+    let key = keys.iter().find(|key| key.name == field.name())?;
+    let without_comment = key.value.split(" #").next().unwrap_or_default();
+    Some(without_comment.trim().trim_matches(['"', '\'']))
+}
+
+pub(crate) fn value(values: &BTreeMap<String, Value>, field: Field) -> Option<&Value> {
     values.get(field.name())
 }
 
-/// Collects every problem in one node file's frontmatter.
-struct Reader<'a> {
-    file: &'a TreePath,
-    frontmatter: &'a Frontmatter<'a>,
-    findings: Vec<Finding>,
+/// Collects every problem in one file's frontmatter. Decision records use it too.
+pub(crate) struct Reader<'a> {
+    pub(crate) file: &'a TreePath,
+    pub(crate) frontmatter: &'a Frontmatter<'a>,
+    pub(crate) findings: Vec<Finding>,
 }
 
 impl Reader<'_> {
-    fn report(&mut self, line: u32, problem: Problem) {
+    pub(crate) fn report(&mut self, line: u32, problem: Problem) {
         self.findings.push(Finding {
             file: self.file.clone(),
             line: Some(line),
@@ -192,7 +197,7 @@ impl Reader<'_> {
         });
     }
 
-    fn report_field(&mut self, field: Field, problem: Problem) {
+    pub(crate) fn report_field(&mut self, field: Field, problem: Problem) {
         let key = self.frontmatter.key(field.name());
         self.report(key.map_or(OPENING_LINE, |key| key.line), problem);
     }
@@ -271,7 +276,7 @@ impl Reader<'_> {
         id
     }
 
-    fn quoted_text(
+    pub(crate) fn quoted_text(
         &mut self,
         field: Field,
         values: &BTreeMap<String, Value>,
@@ -284,7 +289,7 @@ impl Reader<'_> {
     }
 
     // A value that starts on the next line can't be judged from the key's line, so it's left.
-    fn check_quoting(&mut self, field: Field) {
+    pub(crate) fn check_quoting(&mut self, field: Field) {
         let Some(key) = self.frontmatter.key(field.name()) else {
             return;
         };
@@ -293,7 +298,7 @@ impl Reader<'_> {
         }
     }
 
-    fn text(&mut self, field: Field, value: Option<&Value>) -> Option<NonEmptyString> {
+    pub(crate) fn text(&mut self, field: Field, value: Option<&Value>) -> Option<NonEmptyString> {
         let problem = match value {
             Some(Value::Text(text)) => match NonEmptyString::new(text.clone()) {
                 Some(text) => return Some(text),
@@ -311,7 +316,11 @@ impl Reader<'_> {
     }
 
     /// `Err` when the value has the wrong type, which is reported.
-    fn optional_text(&mut self, field: Field, value: Option<&Value>) -> Result<Option<String>, ()> {
+    pub(crate) fn optional_text(
+        &mut self,
+        field: Field,
+        value: Option<&Value>,
+    ) -> Result<Option<String>, ()> {
         match value {
             None | Some(Value::Null) => Ok(None),
             Some(Value::Text(text)) => Ok(Some(text.clone())),
@@ -323,7 +332,7 @@ impl Reader<'_> {
         }
     }
 
-    fn list<T>(
+    pub(crate) fn list<T>(
         &mut self,
         field: Field,
         value: Option<&Value>,
@@ -397,6 +406,6 @@ impl Reader<'_> {
 }
 
 /// The file line of a YAML error inside the frontmatter.
-fn file_line(error: &serde_saphyr::Error) -> u32 {
+pub(crate) fn file_line(error: &serde_saphyr::Error) -> u32 {
     yaml::error_line(error).map_or(OPENING_LINE, |line| line + FIRST_YAML_LINE - 1)
 }

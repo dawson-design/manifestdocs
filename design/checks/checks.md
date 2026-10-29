@@ -13,7 +13,7 @@ summary: "Validates a tree and its decision records, so `check` can gate docs PR
 - Every reference and link resolves: node IDs, `superseded_by`, and local Markdown links and their anchors in node bodies and supporting docs.
 - Superseded nodes name a replacement that exists and isn't the node itself.
 - A Markdown file with a node `id` that isn't a node file, such as after a folder or tree rename, is an error.
-- Every decision record has valid frontmatter, a node that exists, and a `supersedes` reference that resolves.
+- Every decision record has valid frontmatter, a node that exists, and a `supersedes` reference that resolves. An unknown field in a record's frontmatter is a warning, as in a node's.
 - At most one accepted decision per `topic` within a node.
 - From M2, a warning for each decision record whose body is over 300 estimated tokens, a fixed limit, since a record is [a few lines](../decision-records/decision-records.md#record-format) in any tree.
 - With GitHub access, every referenced issue exists, and issues that name a node point to one that exists.

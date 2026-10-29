@@ -9,11 +9,14 @@ use crate::id::{NodeId, NodeIdPrefix};
 use crate::layout::layout;
 use crate::node::{Node, NodeLocation, NodeStatus, ParsedNode};
 use crate::paths::{RepoPath, TreePath};
+use crate::record::DecisionIdPrefix;
 
-/// How a command names one node: by ID or prefix, or by its node file or folder.
+/// How a command names one node: by ID or prefix, or by its node file or folder. `show`
+/// also takes a decision ID or prefix, which names a record rather than a node.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeSelector {
     Id(NodeIdPrefix),
+    Decision(DecisionIdPrefix),
     Path(TreePath),
 }
 
@@ -207,6 +210,8 @@ impl Tree {
                 let entry = self.entries.get(path).or_else(|| self.entry_at(path));
                 entry.ok_or(SelectError::NotANode)
             }
+            // Records aren't in the tree; `record::select_record` finds them.
+            NodeSelector::Decision(_) => Err(SelectError::NoMatch),
         }
     }
 

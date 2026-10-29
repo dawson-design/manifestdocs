@@ -64,13 +64,13 @@ fn skips_a_nested_tree_with_a_warning() {
 #[test]
 fn never_treats_a_decisions_folder_as_a_node() {
     let root = node("fd-000001", "Demo");
-    let decisions = node("fd-000005", "Decisions");
+    let decisions = "---\nid: dc-0000001\nnode: fd-000001\ntitle: \"Decisions\"\nstatus: accepted\ntopic: decisions\ndate: 2026-10-28\n---\n";
     let fixture = Fixture::new(
         "decisions",
         &[
             CONFIG,
             ("demo.md", &root),
-            ("decisions/decisions.md", &decisions),
+            ("decisions/decisions.md", decisions),
         ],
     );
 
