@@ -22,11 +22,13 @@ Agent format for an issue:
 ```markdown
 # Context: example-org/cookbook-docs#112 (docs origin/main @ 3f9a1c2, 2026-10-27)
 
-## Issue
+## Issue: Filter by cooking time (Task, open)
+
 Let readers filter search results by cooking time. Acceptance criteria: ...
 
 ## Parent work
-- #41 Recipe search (open)
+
+- #41 Recipe search (Epic, open, 1 of 2 done)
   - #58 Search filters (open, 3 of 5 done)
 
 ## Feature: Recipe search (fd-7c2e41, approved)

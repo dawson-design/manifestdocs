@@ -97,8 +97,9 @@ impl Fixture {
         });
         let parent = details.parent.map_or("null".to_owned(), issue_node);
         let json = format!(
-            r#"{{"number":{number},"title":{},"state":"{state}","createdAt":"2026-10-01T09:30:00Z","body":"","issueType":{issue_type},"parent":{parent},"subIssues":{}}}"#,
+            r#"{{"number":{number},"title":{},"state":"{state}","createdAt":"2026-10-01T09:30:00Z","body":{},"issueType":{issue_type},"parent":{parent},"subIssues":{}}}"#,
             json(details.title),
+            json(details.body),
             page(0)
         );
         self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
@@ -344,11 +345,12 @@ impl Drop for Fixture {
     }
 }
 
-/// An issue for the fake `gh` to know, with the fields `work` reads. Issues are written as
-/// `owner/name#number`.
+/// An issue for the fake `gh` to know, with the fields `work` and `context` read. Issues are
+/// written as `owner/name#number`.
 #[derive(Default)]
 pub struct GhIssue<'a> {
     pub title: &'a str,
+    pub body: &'a str,
     pub closed: bool,
     pub issue_type: Option<&'a str>,
     pub parent: Option<&'a str>,

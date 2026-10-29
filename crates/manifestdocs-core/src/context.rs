@@ -1,5 +1,5 @@
 //! Agent context: a node and its ancestors in full, the docs it links to and its children,
-//! trimmed to an approximate token budget.
+//! and for an issue, the issue and its parents, trimmed to an approximate token budget.
 
 use crate::check::Snapshot;
 use crate::decisions;
@@ -9,8 +9,10 @@ use crate::markdown::outline;
 use crate::node::NodeLocation;
 use crate::paths::{RepoPath, TreePath};
 use crate::record::{self, ParsedRecord, Record, RecordStatus, find_record, read_records};
+use crate::refs::{IssueRef, RepoRef};
 use crate::tokens::{estimate, grouped};
 use crate::tree::{Entry, Tree};
+use crate::work::{Issue, IssueChain};
 
 /// Which version of the docs the context was read from, for its header.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -250,6 +252,8 @@ pub struct Request<'a> {
     pub tree: &'a Tree,
     pub snapshot: &'a Snapshot,
     pub entry: &'a Entry,
+    /// The issue the context is for, when it's for an issue that links to `entry`.
+    pub issue: Option<&'a IssueChain>,
     pub version: &'a DocsVersion,
     pub budget: Option<Budget>,
     /// How output names a repo path, such as relative to the current folder.
@@ -264,10 +268,12 @@ struct Piece {
     name: String,
 }
 
-/// The sections after the target, in the order they're printed. Pieces fill the budget in
+/// The sections around the target, in the order they're printed. Pieces fill the budget in
 /// their own order, so a section can be printed after pieces that filled the budget later.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
+    Issue,
+    ParentWork,
     Ancestors,
     Decisions,
     LinkedDocs,
@@ -279,7 +285,8 @@ enum Section {
 impl Section {
     fn heading(self) -> &'static str {
         match self {
-            Section::Ancestors => "",
+            Section::Issue | Section::Ancestors => "",
+            Section::ParentWork => "\n## Parent work\n\n",
             Section::Decisions => "\n## Decisions\n\n",
             Section::LinkedDocs => "\n## Linked docs\n",
             Section::LinkedNodes => "\n## Linked nodes\n\n",
@@ -289,9 +296,21 @@ impl Section {
     }
 }
 
+/// The header and the target node, which always go in. Sections about an issue go between.
+struct Head {
+    header: String,
+    target: String,
+}
+
 pub fn context(request: &Request) -> String {
-    let mut head = header(request.entry, request.version);
-    head.push_str(&target(request));
+    let name = match request.issue {
+        Some(chain) => chain.issue.reference.to_string(),
+        None => request.entry.id.to_string(),
+    };
+    let head = Head {
+        header: header(&name, request.version),
+        target: target(request),
+    };
     let pieces = pieces(request);
     let limit = request.budget.map(Budget::characters);
     let mut keep = first_fit(&head, &pieces, limit);
@@ -302,8 +321,8 @@ pub fn context(request: &Request) -> String {
 }
 
 /// Whether each piece fits in what's left of `limit` after the pieces before it.
-fn first_fit(head: &str, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
-    let mut size = chars(head);
+fn first_fit(head: &Head, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
+    let mut size = chars(&head.header) + chars(&head.target);
     let mut opened: Vec<Section> = Vec::new();
     let mut keep = Vec::new();
     for piece in pieces {
@@ -326,7 +345,7 @@ fn first_fit(head: &str, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
 /// limit, this leaves out one more kept piece: the last one whose removal makes the output
 /// smaller. A short link can cost more in the list than kept, so it's passed over.
 fn smaller(
-    head: &str,
+    head: &Head,
     pieces: &[Piece],
     keep: &[bool],
     limit: Option<usize>,
@@ -348,19 +367,17 @@ fn smaller(
 }
 
 /// The kept pieces by section, and what's left out in fill order.
-fn render(head: &str, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -> String {
-    let mut out = head.to_owned();
+fn render(head: &Head, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -> String {
+    let mut out = head.header.clone();
     let pieces_kept = pieces.iter().zip(keep).filter(|(_, kept)| **kept);
     let mut kept: Vec<&Piece> = pieces_kept.map(|(piece, _)| piece).collect();
     kept.sort_by_key(|piece| piece.section);
-    let mut opened: Option<Section> = None;
-    for piece in kept {
-        if opened != Some(piece.section) {
-            out.push_str(piece.section.heading());
-            opened = Some(piece.section);
-        }
-        out.push_str(&piece.text);
-    }
+    let (before, after): (Vec<&Piece>, Vec<&Piece>) = kept
+        .into_iter()
+        .partition(|piece| piece.section < Section::Ancestors);
+    push_sections(&mut out, &before);
+    out.push_str(&head.target);
+    push_sections(&mut out, &after);
     let omitted = omitted(pieces, keep);
     out.push('\n');
     if !omitted.is_empty() {
@@ -371,6 +388,18 @@ fn render(head: &str, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -
     let of_budget = of_budget.unwrap_or_default();
     out.push_str(&format!("Estimated size: {size}{of_budget} tokens\n"));
     out
+}
+
+/// `pieces`, sorted by section, each section under its heading.
+fn push_sections(out: &mut String, pieces: &[&Piece]) {
+    let mut opened: Option<Section> = None;
+    for piece in pieces {
+        if opened != Some(piece.section) {
+            out.push_str(piece.section.heading());
+            opened = Some(piece.section);
+        }
+        out.push_str(&piece.text);
+    }
 }
 
 /// Each piece that's left out, with its size, in fill order.
@@ -384,17 +413,15 @@ fn omitted(pieces: &[Piece], keep: &[bool]) -> Vec<String> {
         .collect()
 }
 
-fn header(entry: &Entry, version: &DocsVersion) -> String {
+/// The first line names `name`, the node's ID or the issue, and the docs version.
+fn header(name: &str, version: &DocsVersion) -> String {
     if let DocsVersion::Commit {
         reference,
         commit,
         date,
     } = version
     {
-        return format!(
-            "# Context: {} (docs {reference} @ {commit}, {date})\n",
-            entry.id
-        );
+        return format!("# Context: {name} (docs {reference} @ {commit}, {date})\n");
     }
     let DocsVersion::WorkingTree {
         branch,
@@ -404,17 +431,14 @@ fn header(entry: &Entry, version: &DocsVersion) -> String {
         default_branch,
     } = version
     else {
-        return format!("# Context: {} (docs not in git)\n", entry.id);
+        return format!("# Context: {name} (docs not in git)\n");
     };
     let changes = match uncommitted {
         true => ", uncommitted changes",
         false => "",
     };
     let on = branch.as_deref().unwrap_or("detached HEAD");
-    let mut out = format!(
-        "# Context: {} (docs {on} @ {commit}, {date}{changes})\n",
-        entry.id
-    );
+    let mut out = format!("# Context: {name} (docs {on} @ {commit}, {date}{changes})\n");
     // A detached HEAD has no branch to compare.
     if let (Some(branch), Some(default)) = (branch, default_branch)
         && branch != default
@@ -474,8 +498,8 @@ fn push_body(out: &mut String, body: &str) {
 }
 
 // In fill order: the target's decisions, each ancestor from the parent up to the root followed
-// by its decisions, linked docs, linked nodes, other links, then the children. A linked node
-// that's also a child appears once, as a child.
+// by its decisions, linked docs, linked nodes, other links, the issue and its parents, then
+// the children. A linked node that's also a child appears once, as a child.
 fn pieces(request: &Request) -> Vec<Piece> {
     let Request {
         tree,
@@ -506,6 +530,7 @@ fn pieces(request: &Request) -> Vec<Piece> {
     let unlisted = unreadable.into_iter().map(|doc| Listed::Path(doc.clone()));
     let listed: Vec<Listed> = unlisted.chain(links.listed.iter().cloned()).collect();
     pieces.extend(listed.iter().map(|link| other_link(request, link)));
+    pieces.extend(request.issue.into_iter().flat_map(issue_pieces));
     let around = children.iter();
     pieces.extend(around.map(|child| summary(request, Section::Around, "Child: ", child)));
     pieces
@@ -684,6 +709,68 @@ fn ancestor_piece(request: &Request, ancestor: &Entry, is_parent: bool) -> Piece
         section: Section::Ancestors,
         text,
         name: file_name(request, ancestor),
+    }
+}
+
+/// The issue in full, then its parents as one line each, from the top down.
+fn issue_pieces(chain: &IssueChain) -> Vec<Piece> {
+    let issue = &chain.issue;
+    let mut text = format!("\n## Issue: {} ({})\n", issue.title, notes(chain, issue));
+    push_body(&mut text, &issue.body.replace("\r\n", "\n"));
+    let mut pieces = vec![Piece {
+        section: Section::Issue,
+        text,
+        name: issue.reference.to_string(),
+    }];
+    if !chain.parents.is_empty() {
+        pieces.push(Piece {
+            section: Section::ParentWork,
+            text: parent_work(chain),
+            name: "parent work".to_owned(),
+        });
+    }
+    pieces
+}
+
+/// Each parent indented under the one above it. A parent `gh` can't read, at the top, says
+/// why.
+fn parent_work(chain: &IssueChain) -> String {
+    let repo = chain.issue.reference.repo();
+    let mut out = String::new();
+    for (depth, parent) in chain.parents.iter().rev().enumerate() {
+        let line = match parent {
+            Ok(issue) => format!(
+                "{} {} ({})",
+                short(&issue.reference, repo),
+                issue.title,
+                notes(chain, issue)
+            ),
+            Err((reference, why)) => format!("{}: {why}", short(reference, repo)),
+        };
+        out.push_str(&format!("{}- {line}\n", "  ".repeat(depth)));
+    }
+    out
+}
+
+/// An issue's type, state and, when it has sub-issues, how many are done, as `work` shows them.
+fn notes(chain: &IssueChain, issue: &Issue) -> String {
+    let mut notes: Vec<String> = issue.issue_type.iter().cloned().collect();
+    notes.push(issue.state.as_str().to_owned());
+    if let (done, total @ 1..) = chain.progress(issue) {
+        notes.push(format!("{done} of {total} done"));
+    }
+    notes.join(", ")
+}
+
+/// `#number` when the issue is in `repo`, and `owner/name#number` otherwise.
+fn short(issue: &IssueRef, repo: &RepoRef) -> String {
+    let same = issue
+        .repo()
+        .to_string()
+        .eq_ignore_ascii_case(&repo.to_string());
+    match same {
+        true => format!("#{}", issue.number()),
+        false => issue.to_string(),
     }
 }
 

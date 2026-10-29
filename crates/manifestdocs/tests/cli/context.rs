@@ -1,5 +1,7 @@
 //! `manifestdocs context`.
 
+mod issue;
+
 use std::fs;
 use std::process::Command;
 

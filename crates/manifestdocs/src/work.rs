@@ -145,18 +145,9 @@ fn short(issue: &IssueRef, repo: Option<&RepoRef>) -> String {
 
 /// Why an issue's line has no title, in text and in JSON.
 pub fn reason(unreadable: &Unreadable) -> String {
-    match unreadable {
-        Unreadable::NotFound => "not an issue you can read on GitHub".to_owned(),
-        Unreadable::Failed(message) => format!("can't read it on GitHub: {message}"),
-        Unreadable::Unlisted { after } => {
-            format!("sub-issues past {after} couldn't be read, since GitHub repeated a page cursor")
-        }
-    }
+    unreadable.to_string()
 }
 
 pub fn state(state: IssueState) -> &'static str {
-    match state {
-        IssueState::Open => "open",
-        IssueState::Closed => "closed",
-    }
+    state.as_str()
 }
