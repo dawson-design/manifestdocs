@@ -11,6 +11,7 @@ mod locate;
 mod report;
 mod show;
 mod tree;
+mod work;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -83,6 +84,16 @@ enum Command {
         #[command(flatten)]
         docs: DocsRef,
     },
+    /// Print the issues a node lists in `work`, with their sub-issues, read from GitHub with `gh`
+    Work {
+        /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
+        node: String,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
+        #[command(flatten)]
+        docs: DocsRef,
+    },
     /// Start a tree here: write manifestdocs.yaml and a root node
     Init {
         /// The project's title; the tree's name is the title in kebab case [default: this folder's name]
@@ -128,6 +139,7 @@ impl Command {
             Self::Show { json: true, .. } => Some("show"),
             Self::Decide { json: true, .. } => Some("decide"),
             Self::Decisions { json: true, .. } => Some("decisions"),
+            Self::Work { json: true, .. } => Some("work"),
             _ => None,
         }
     }
@@ -187,6 +199,7 @@ fn main() -> ExitCode {
             out,
             docs,
         } => context::run(&node, budget, out.as_deref(), docs.reference.as_deref()),
+        Command::Work { node, json, docs } => work::run(&node, json, docs.reference.as_deref()),
         Command::Init { title } => init::run(title.as_deref()),
         Command::Decide {
             file,

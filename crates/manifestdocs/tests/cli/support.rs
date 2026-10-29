@@ -73,6 +73,33 @@ impl Fixture {
         self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
     }
 
+    /// Has the fake `gh` know `issue` (`owner/name#number`) on `host` with `details`. Like
+    /// GitHub, it answers with at most 100 sub-issues, and pages through the rest 100 at a
+    /// time after the cursors `p1`, `p2` and so on.
+    pub fn gh_issue_with(&self, host: &str, issue: &str, details: &GhIssue) {
+        let (repo, number) = issue.split_once('#').expect("an issue reference");
+        let pages: Vec<&[&str]> = details.sub_issues.chunks(100).collect();
+        let page = |index: usize| {
+            let next = (index + 1 < pages.len()).then(|| format!("p{}", index + 1));
+            sub_issue_page(pages.get(index).copied().unwrap_or_default(), next)
+        };
+        let state = if details.closed { "CLOSED" } else { "OPEN" };
+        let issue_type = details.issue_type.map_or("null".to_owned(), |name| {
+            format!(r#"{{"name":{}}}"#, json(name))
+        });
+        let parent = details.parent.map_or("null".to_owned(), issue_node);
+        let json = format!(
+            r#"{{"number":{number},"title":{},"state":"{state}","createdAt":"2026-10-01T09:30:00Z","body":"","issueType":{issue_type},"parent":{parent},"subIssues":{}}}"#,
+            json(details.title),
+            page(0)
+        );
+        self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
+        for index in 1..pages.len() {
+            let file = format!("issues/{host}/{repo}/{number}.after-p{index}.json");
+            self.write_gh(&file, &format!(r#"{{"subIssues":{}}}"#, page(index)));
+        }
+    }
+
     /// Has the fake `gh` answer that `issue` on `host` isn't an issue, as GitHub does for a
     /// number with no issue or a pull request.
     pub fn gh_no_issue(&self, host: &str, issue: &str) {
@@ -141,6 +168,34 @@ impl Fixture {
     /// Has the fake `gh` fail every request as `gh` does when GitHub refuses its token.
     pub fn gh_unauthorized(&self) {
         self.write_gh("unauthorized", "");
+    }
+
+    /// Has the fake `gh` fail every query as GitHub does when the rate limit is used up: a
+    /// GraphQL error that isn't about any one repo or issue.
+    pub fn gh_rate_limited(&self) {
+        self.write_gh("rate-limited", "");
+    }
+
+    /// Has the fake `gh` answer that it can't read `repo` on `host`, as GitHub does with a
+    /// FORBIDDEN error on the repository, such as for an organization that needs SAML.
+    pub fn gh_forbidden_repo(&self, host: &str, repo: &str) {
+        self.write_gh(&format!("issues/{host}/{repo}.forbidden"), "");
+    }
+
+    /// Adds a GraphQL error for the sub-issue at `index` in a page of `issue`'s sub-issues on
+    /// `host`: the first page, or the page after `cursor`. Write the issue with `-` in its
+    /// `sub_issues` at that place, so the node is `null`, as GitHub returns it.
+    pub fn gh_sub_issue_error(&self, host: &str, issue: &str, cursor: Option<&str>, index: usize) {
+        let (repo, number) = issue.split_once('#').expect("an issue reference");
+        let page = cursor.map_or(String::new(), |cursor| format!(".after-{cursor}"));
+        let path = format!(r#"["repository","i{number}","subIssues","nodes",{index}]"#);
+        let error = format!(
+            r#"{{"type":"FORBIDDEN","path":{path},"message":"Resource not accessible by integration"}}"#
+        );
+        self.write_gh(
+            &format!("issues/{host}/{repo}/{number}{page}.errors"),
+            &error,
+        );
     }
 
     /// Writes the fixture's fake `gh` and returns its folder, for a test that builds its own
@@ -262,6 +317,44 @@ impl Drop for Fixture {
     }
 }
 
+/// An issue for the fake `gh` to know, with the fields `work` reads. Issues are written as
+/// `owner/name#number`.
+#[derive(Default)]
+pub struct GhIssue<'a> {
+    pub title: &'a str,
+    pub closed: bool,
+    pub issue_type: Option<&'a str>,
+    pub parent: Option<&'a str>,
+    /// In GitHub's order.
+    pub sub_issues: &'a [&'a str],
+}
+
+/// An issue as GitHub's GraphQL API names one in a list: its number and its repo. `-` is a
+/// node GitHub couldn't return, which is `null`.
+fn issue_node(issue: &str) -> String {
+    if issue == "-" {
+        return "null".to_owned();
+    }
+    let (repo, number) = issue.split_once('#').expect("an issue reference");
+    format!(
+        r#"{{"number":{number},"repository":{{"nameWithOwner":{}}}}}"#,
+        json(repo)
+    )
+}
+
+/// One page of an issue's `subIssues` connection, with `next` as the cursor of the page after.
+fn sub_issue_page(issues: &[&str], next: Option<String>) -> String {
+    let nodes: Vec<String> = issues.iter().map(|issue| issue_node(issue)).collect();
+    let page_info = match next {
+        Some(next) => format!(r#"{{"hasNextPage":true,"endCursor":{}}}"#, json(&next)),
+        None => r#"{"hasNextPage":false,"endCursor":null}"#.to_owned(),
+    };
+    format!(
+        r#"{{"pageInfo":{page_info},"nodes":[{}]}}"#,
+        nodes.join(",")
+    )
+}
+
 /// `text` as a JSON string.
 fn json(text: &str) -> String {
     let escaped = text
@@ -289,6 +382,10 @@ if [ -e "$dir/logged-out" ]; then
 fi
 if [ -e "$dir/unauthorized" ]; then
   echo 'gh: HTTP 401: Bad credentials (https://api.github.com/graphql)' >&2
+  exit 1
+fi
+if [ -e "$dir/rate-limited" ]; then
+  printf '%s' '{{"errors":[{{"type":"RATE_LIMITED","message":"API rate limit exceeded"}}]}}'
   exit 1
 fi
 [ "$1 $2" = "api graphql" ] || fail "unexpected command: $*"
@@ -325,9 +422,15 @@ if [ -e "$repo.missing" ]; then
   printf '%s' '{{"data":{{"repository":null}},"errors":[{{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository."}}]}}'
   exit 1
 fi
+if [ -e "$repo.forbidden" ]; then
+  printf '%s' '{{"data":{{"repository":null}},"errors":[{{"type":"FORBIDDEN","path":["repository"],"message":"Resource protected by organization SAML enforcement."}}]}}'
+  exit 1
+fi
 data= errors=
 for number in $(printf '%s\n' "$query" | grep -o 'issue(number: [0-9]*)' | tr -cd '0-9\n'); do
   file="$repo/$number.json"
+  # A later page of one issue's sub-issues, asked for after `cursor`.
+  if [ -n "$cursor" ]; then file="$repo/$number.after-$cursor.json"; fi
   [ -f "$file" ] || fail "no answer for $owner/$name#$number on $host"
   issue=$(cat "$file")
   if [ "$issue" = forbidden ]; then
@@ -336,6 +439,8 @@ for number in $(printf '%s\n' "$query" | grep -o 'issue(number: [0-9]*)' | tr -c
   elif [ "$issue" = null ]; then
     errors="$errors${{errors:+,}}{{\"type\":\"NOT_FOUND\",\"path\":[\"repository\",\"i$number\"],\"message\":\"Could not resolve to an Issue with the number of $number.\"}}"
   fi
+  # Errors on single sub-issues in this page.
+  if [ -f "${{file%.json}}.errors" ]; then errors="$errors${{errors:+,}}$(cat "${{file%.json}}.errors")"; fi
   data="$data${{data:+,}}\"i$number\":$issue"
 done
 [ -n "$data" ] || fail "no issues asked about: $query"

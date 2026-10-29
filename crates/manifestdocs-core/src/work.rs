@@ -1,5 +1,5 @@
-//! Links to work: the node links in issue bodies, and `check`'s rules for the issues a
-//! tree references and the issues that name its nodes.
+//! Links to work: the node links in issue bodies, `check`'s rules for the issues a tree
+//! references and the issues that name its nodes, and the sub-issue hierarchy `work` shows.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter;
@@ -12,9 +12,10 @@ use crate::config::{self, TreeConfig};
 use crate::finding::{Field, Finding, Problem};
 use crate::id::NodeId;
 use crate::layout::layout;
-use crate::node::ParsedNode;
+use crate::node::{Node, ParsedNode};
 use crate::paths::TreePath;
 use crate::refs::{IssueRef, RepoRef};
+use crate::tree::{Entry, Tree};
 
 /// The node an issue names and the docs commit it was planned against, from its body.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -187,6 +188,239 @@ fn feature_findings(node_ids: &BTreeSet<NodeId>, searched: &[IssueBody]) -> Vec<
             problem,
         })
         .collect()
+}
+
+/// An issue as `work` reads it through `gh`. `context <issue>` and `stale` add the body and
+/// the creation time when they need them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Issue {
+    pub reference: IssueRef,
+    pub title: String,
+    pub state: IssueState,
+    /// A display label only, such as `Epic`.
+    pub issue_type: Option<String>,
+    pub parent: Option<IssueRef>,
+    /// In GitHub's order.
+    pub sub_issues: Vec<SubIssue>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IssueState {
+    Open,
+    Closed,
+}
+
+/// One entry in an issue's list of sub-issues.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubIssue {
+    Issue(IssueRef),
+    /// GitHub listed a sub-issue it couldn't return, so its reference is unknown.
+    Unreadable(Unreadable),
+}
+
+/// Why `gh` couldn't read an issue.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unreadable {
+    /// The issue, or its repo, doesn't exist or can't be seen.
+    NotFound,
+    /// GitHub's message, such as for an issue or repo the token can't access.
+    Failed(String),
+}
+
+/// An issue reference compared without case, as GitHub compares owner and repo names.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IssueKey(String);
+
+impl From<&IssueRef> for IssueKey {
+    fn from(issue: &IssueRef) -> Self {
+        Self(issue.to_string().to_ascii_lowercase())
+    }
+}
+
+/// The issues `gh` read for a hierarchy, or why it couldn't read each one.
+pub type Fetched = BTreeMap<IssueKey, Result<Issue, Unreadable>>;
+
+/// Each issue's parent, for the issues above a node's work items. `None`: no parent, or none
+/// `gh` could read.
+pub type Parents = BTreeMap<IssueKey, Option<IssueRef>>;
+
+/// The issues that nodes below a node list in their own `work`, each with the node that takes
+/// it and its sub-issues.
+pub type Takeovers<'a> = BTreeMap<IssueKey, &'a Entry>;
+
+/// One issue in a node's work, with the sub-issues the node owns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkEntry<'a> {
+    /// `None` for a sub-issue GitHub couldn't return.
+    pub reference: Option<&'a IssueRef>,
+    pub issue: Result<&'a Issue, &'a Unreadable>,
+    /// The issue's parents, nearest first, up to the top.
+    pub parents: Vec<&'a IssueRef>,
+    /// How many of the issue's sub-issues are closed. `None` when a deeper node takes them, so
+    /// they weren't read.
+    pub done: Option<usize>,
+    /// A deeper node that lists this sub-issue in its own `work`, which takes the issue's
+    /// sub-issues.
+    pub listed_by: Option<&'a Entry>,
+    pub sub_issues: Vec<WorkEntry<'a>>,
+}
+
+/// What `gh` read for a node's work: the issues and their sub-issues, and the parents above
+/// the issues the node lists.
+pub struct GitHubWork<'a> {
+    pub fetched: &'a Fetched,
+    pub parents: &'a Parents,
+}
+
+/// The issues the nodes below `entry` list in `work`, other than those `node` lists itself.
+/// When two nodes list one issue, the shallower node takes it, and of two at one depth, the
+/// first in outline order.
+pub fn takeovers<'a>(tree: &'a Tree, entry: &'a Entry, node: &'a Node) -> Takeovers<'a> {
+    let own: BTreeSet<IssueKey> = node.work.iter().map(IssueKey::from).collect();
+    let mut below = tree.outline(&entry.location.folder(), None);
+    below.retain(|(level, _)| *level > 0);
+    // A stable sort keeps outline order within each level.
+    below.sort_by_key(|(level, _)| *level);
+    let mut taken = Takeovers::new();
+    for (_, child) in below {
+        let work = child.node.iter().flat_map(|node| node.work.iter());
+        for issue in work.filter(|issue| !own.contains(&IssueKey::from(*issue))) {
+            taken.entry(issue.into()).or_insert(child);
+        }
+    }
+    taken
+}
+
+/// The issues `node` lists in `work`, each with its parents and its sub-issues at any depth. A
+/// sub-issue in `takeovers` belongs to a deeper node, so its sub-issues are left out. An issue
+/// the node lists that's also below another it lists shows once, below.
+pub fn node_work<'a>(
+    node: &'a Node,
+    github: GitHubWork<'a>,
+    takeovers: &'a Takeovers<'a>,
+) -> Vec<WorkEntry<'a>> {
+    let walk = Walk { github, takeovers };
+    let entries: Vec<WorkEntry> = node
+        .work
+        .iter()
+        .map(|issue| walk.entry(issue, walk.chain(issue), None, &[]))
+        .collect();
+    let nested = nested(&entries);
+    let entries = entries.into_iter().zip(nested);
+    entries
+        .filter_map(|(item, nested)| (!nested).then_some(item))
+        .collect()
+}
+
+/// Whether each top-level entry also shows below another. Two entries below each other form
+/// a cycle, and then both show.
+fn nested(entries: &[WorkEntry]) -> Vec<bool> {
+    let keys: Vec<Option<IssueKey>> = entries
+        .iter()
+        .map(|item| item.reference.map(IssueKey::from))
+        .collect();
+    let below: Vec<BTreeSet<IssueKey>> = entries.iter().map(descendants).collect();
+    let under = |i: usize, j: usize| keys[i].as_ref().is_some_and(|key| below[j].contains(key));
+    (0..entries.len())
+        .map(|i| (0..entries.len()).any(|j| j != i && under(i, j) && !under(j, i)))
+        .collect()
+}
+
+/// The issues below `entry` in its output.
+fn descendants(entry: &WorkEntry) -> BTreeSet<IssueKey> {
+    let mut keys = BTreeSet::new();
+    for sub in &entry.sub_issues {
+        keys.extend(sub.reference.map(IssueKey::from));
+        keys.extend(descendants(sub));
+    }
+    keys
+}
+
+struct Walk<'a> {
+    github: GitHubWork<'a>,
+    takeovers: &'a Takeovers<'a>,
+}
+
+impl<'a> Walk<'a> {
+    // `above` guards against a cycle, which GitHub's sub-issues can't form.
+    fn entry(
+        &self,
+        reference: &'a IssueRef,
+        parents: Vec<&'a IssueRef>,
+        listed_by: Option<&'a Entry>,
+        above: &[IssueKey],
+    ) -> WorkEntry<'a> {
+        let key = IssueKey::from(reference);
+        let issue = self.issue(reference);
+        let subs = issue.map_or(&[][..], |issue| issue.sub_issues.as_slice());
+        let expand = listed_by.is_none() && !above.contains(&key);
+        let done = listed_by
+            .is_none()
+            .then(|| subs.iter().filter(|sub| self.closed(sub)).count());
+        let mut path = above.to_vec();
+        path.push(key);
+        let chain = |parents: &[&'a IssueRef]| {
+            let chain = std::iter::once(reference).chain(parents.iter().copied());
+            chain.collect::<Vec<_>>()
+        };
+        let sub_issues = subs.iter().filter(|_| expand).map(|sub| match sub {
+            SubIssue::Issue(sub) => {
+                let listed_by = self.takeovers.get(&IssueKey::from(sub)).copied();
+                self.entry(sub, chain(&parents), listed_by, &path)
+            }
+            SubIssue::Unreadable(why) => unreadable_sub_issue(why, chain(&parents)),
+        });
+        WorkEntry {
+            reference: Some(reference),
+            issue,
+            parents: parents.clone(),
+            done,
+            listed_by,
+            sub_issues: sub_issues.collect(),
+        }
+    }
+
+    fn issue(&self, reference: &IssueRef) -> Result<&'a Issue, &'a Unreadable> {
+        let fetched = self.github.fetched.get(&IssueKey::from(reference));
+        // `fetch_hierarchy` reads every issue it's given, so a missing one isn't expected.
+        fetched.map_or(Err(&Unreadable::NotFound), Result::as_ref)
+    }
+
+    fn closed(&self, sub: &SubIssue) -> bool {
+        let SubIssue::Issue(sub) = sub else {
+            return false;
+        };
+        let issue = self.issue(sub).ok();
+        issue.is_some_and(|issue| issue.state == IssueState::Closed)
+    }
+
+    /// A work item's parents, nearest first, from its own `parent` up through `parents`.
+    fn chain(&self, reference: &IssueRef) -> Vec<&'a IssueRef> {
+        let mut seen = vec![IssueKey::from(reference)];
+        let mut chain: Vec<&IssueRef> = Vec::new();
+        let mut next = self.issue(reference).ok().and_then(|i| i.parent.as_ref());
+        while let Some(parent) = next {
+            let key = IssueKey::from(parent);
+            if seen.contains(&key) {
+                break;
+            }
+            chain.push(parent);
+            next = self.github.parents.get(&key).and_then(Option::as_ref);
+            seen.push(key);
+        }
+        chain
+    }
+}
+
+fn unreadable_sub_issue<'a>(why: &'a Unreadable, parents: Vec<&'a IssueRef>) -> WorkEntry<'a> {
+    WorkEntry {
+        reference: None,
+        issue: Err(why),
+        parents,
+        done: None,
+        listed_by: None,
+        sub_issues: Vec::new(),
+    }
 }
 
 #[cfg(test)]

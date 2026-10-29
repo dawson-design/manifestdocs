@@ -11,9 +11,11 @@ use manifestdocs_core::config::SUPERSEDED;
 use manifestdocs_core::finding::Finding;
 use manifestdocs_core::node::{Node, NodeStatus};
 use manifestdocs_core::tree::{Entry, Tree};
+use manifestdocs_core::work::WorkEntry;
 use serde::Serialize;
 
 use crate::report::{finding_path, relative, write_stdout};
+use crate::work;
 
 const SCHEMA: u32 = 1;
 
@@ -138,6 +140,63 @@ pub fn show(tree: &Tree, entry: &Entry, tree_root: &Path, cwd: &Path) -> Result<
 /// Prints `data` for a command that sets its own shape, such as `decide` and `decisions`.
 pub fn data(command: &str, data: impl Serialize) -> Result<()> {
     print(command, data)
+}
+
+/// `work` is `None` when the node's frontmatter has errors, which `findings` lists.
+#[derive(Serialize)]
+struct WorkData<'a> {
+    id: &'a str,
+    file: String,
+    work: Option<Vec<WorkIssue<'a>>>,
+    findings: Vec<JsonFinding>,
+}
+
+/// The fields read from GitHub are `None` when `gh` can't read the issue, and `error` says why.
+#[derive(Serialize)]
+struct WorkIssue<'a> {
+    issue: Option<String>,
+    found: bool,
+    error: Option<String>,
+    title: Option<&'a str>,
+    state: Option<&'static str>,
+    issue_type: Option<&'a str>,
+    parents: Vec<String>,
+    sub_issues_done: Option<usize>,
+    sub_issues_total: Option<usize>,
+    listed_by: Option<&'a str>,
+    sub_issues: Vec<WorkIssue<'a>>,
+}
+
+pub fn work(entry: &Entry, work: Option<&[WorkEntry]>, tree_root: &Path, cwd: &Path) -> Result<()> {
+    let mut findings: Vec<&Finding> = entry.node.as_ref().err().into_iter().flatten().collect();
+    findings.sort_by_key(|finding| finding.line);
+    let data = WorkData {
+        id: entry.id.as_str(),
+        file: shown(entry.file.as_str(), tree_root, cwd),
+        work: work.map(|work| work.iter().map(work_issue).collect()),
+        findings: findings
+            .into_iter()
+            .map(|f| finding(f, tree_root, cwd))
+            .collect(),
+    };
+    print("work", data)
+}
+
+fn work_issue<'a>(item: &WorkEntry<'a>) -> WorkIssue<'a> {
+    let issue = item.issue.ok();
+    WorkIssue {
+        issue: item.reference.map(ToString::to_string),
+        found: issue.is_some(),
+        error: item.issue.err().map(work::reason),
+        title: issue.map(|issue| issue.title.as_str()),
+        state: issue.map(|issue| work::state(issue.state)),
+        issue_type: issue.and_then(|issue| issue.issue_type.as_deref()),
+        parents: item.parents.iter().map(ToString::to_string).collect(),
+        sub_issues_done: issue.and(item.done),
+        sub_issues_total: issue.map(|issue| issue.sub_issues.len()),
+        listed_by: item.listed_by.map(|node| node.id.as_str()),
+        sub_issues: item.sub_issues.iter().map(work_issue).collect(),
+    }
 }
 
 /// Prints the error that stopped `command`, and exits 2 as text output does.
