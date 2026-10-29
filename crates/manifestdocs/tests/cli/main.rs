@@ -11,6 +11,7 @@ mod mfd;
 mod plugin;
 mod pointer;
 mod show;
+mod stale;
 mod support;
 mod tree;
 mod work;

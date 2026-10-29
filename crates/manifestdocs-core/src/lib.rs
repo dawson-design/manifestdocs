@@ -18,6 +18,7 @@ pub mod pointer;
 pub mod record;
 pub mod refs;
 pub mod slug;
+pub mod stale;
 pub mod tokens;
 pub mod tree;
 pub mod work;

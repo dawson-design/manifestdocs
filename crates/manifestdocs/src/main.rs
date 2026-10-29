@@ -10,6 +10,7 @@ mod json;
 mod locate;
 mod report;
 mod show;
+mod stale;
 mod tree;
 mod work;
 
@@ -99,6 +100,13 @@ enum Command {
         #[command(flatten)]
         docs: DocsRef,
     },
+    /// Report open issues whose node changed after the docs version they were planned
+    /// against, with a summary of what changed
+    Stale {
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
+    },
     /// Start a tree here: write manifestdocs.yaml and a root node
     Init {
         /// The project's title; the tree's name is the title in kebab case [default: this folder's name]
@@ -150,6 +158,7 @@ impl Command {
             Self::Work { json: true, .. } => Some("work"),
             Self::Context { json: true, .. } => Some("context"),
             Self::Init { json: true, .. } => Some("init"),
+            Self::Stale { json: true } => Some("stale"),
             _ => None,
         }
     }
@@ -217,6 +226,7 @@ fn main() -> ExitCode {
             json,
         }),
         Command::Work { node, json, docs } => work::run(&node, json, docs.reference.as_deref()),
+        Command::Stale { json } => stale::run(json),
         Command::Init { title, json } => init::run(title.as_deref(), json),
         Command::Decide {
             file,
