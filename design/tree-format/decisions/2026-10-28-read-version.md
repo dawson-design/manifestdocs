@@ -2,7 +2,7 @@
 id: dc-e8cadfd
 node: fd-e54a4d
 title: "Other repos read the docs repo's default branch"
-status: accepted
+status: superseded
 topic: read-version
 decided_by: alastair
 date: 2026-10-28
