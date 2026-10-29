@@ -18,6 +18,8 @@ hosting = "github"
 github-releases-repo = "dawson-design/gh-manifestdocs"
 # Keep the private source out of the public release
 source-tarball = false
+# The README is for building from a clone of the private repo, so archives ship only the binaries
+auto-includes = false
 # A custom Homebrew tap to publish to
 tap = "dawson-design/homebrew-tap"
 # Publish jobs to run in CI
