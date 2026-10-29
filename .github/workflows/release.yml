@@ -345,3 +345,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  custom-gh-extension-assets:
+    needs:
+      - plan
+      - announce
+    uses: ./.github/workflows/gh-extension-assets.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
