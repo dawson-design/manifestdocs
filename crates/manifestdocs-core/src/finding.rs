@@ -135,6 +135,42 @@ impl Problem {
             | Self::AcceptedTopicTwice { .. } => Severity::Error,
         }
     }
+
+    /// The variant's name in snake case, which names the problem in JSON output.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnparsableFrontmatter(_) => "unparsable_frontmatter",
+            Self::MissingField(_) => "missing_field",
+            Self::EmptyField(_) => "empty_field",
+            Self::UnquotedField(_) => "unquoted_field",
+            Self::WrongType { .. } => "wrong_type",
+            Self::MalformedId(_) => "malformed_id",
+            Self::MalformedRepoRef(_) => "malformed_repo_ref",
+            Self::MalformedIssueRef(_) => "malformed_issue_ref",
+            Self::DuplicateId { .. } => "duplicate_id",
+            Self::UnknownStatus(_) => "unknown_status",
+            Self::SupersededWithoutReplacement => "superseded_without_replacement",
+            Self::ReplacementWithoutSuperseded => "replacement_without_superseded",
+            Self::SupersededBySelf => "superseded_by_self",
+            Self::ReplacementNotFound(_) => "replacement_not_found",
+            Self::NodeIdOutsideNodeFile(_) => "node_id_outside_node_file",
+            Self::BrokenLink(_) => "broken_link",
+            Self::MissingAnchor { .. } => "missing_anchor",
+            Self::NoRootNode { .. } => "no_root_node",
+            Self::NestedTreeSkipped => "nested_tree_skipped",
+            Self::UnknownField(_) => "unknown_field",
+            Self::NodeFileWithoutId => "node_file_without_id",
+            Self::NodeTooLarge { .. } => "node_too_large",
+            Self::MalformedDecisionId(_) => "malformed_decision_id",
+            Self::DuplicateDecisionId { .. } => "duplicate_decision_id",
+            Self::UnknownRecordStatus(_) => "unknown_record_status",
+            Self::RecordNodeNotFound(_) => "record_node_not_found",
+            Self::RecordInWrongFolder { .. } => "record_in_wrong_folder",
+            Self::SupersededRecordNotFound(_) => "superseded_record_not_found",
+            Self::AcceptedTopicTwice { .. } => "accepted_topic_twice",
+            Self::RecordTooLarge { .. } => "record_too_large",
+        }
+    }
 }
 
 impl Field {
@@ -286,5 +322,101 @@ impl fmt::Display for Problem {
                 grouped(RECORD_TOKENS)
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The codes are part of the JSON output's schema 1, so changing one raises the version.
+    #[test]
+    fn codes_are_the_variant_names_in_snake_case() {
+        let id = || NodeId::parse("fd-000001").expect("a valid ID");
+        let path = || TreePath::new("a.md").expect("a valid path");
+        let text = || String::from("x");
+        let decision = || DecisionId::parse("dc-0000001").expect("a valid decision ID");
+        let problems = [
+            Problem::UnparsableFrontmatter(text()),
+            Problem::MissingField(Field::Id),
+            Problem::EmptyField(Field::Title),
+            Problem::UnquotedField(Field::Summary),
+            Problem::WrongType {
+                field: Field::Repos,
+                expected: "a list",
+            },
+            Problem::MalformedId(text()),
+            Problem::MalformedRepoRef(text()),
+            Problem::MalformedIssueRef(text()),
+            Problem::DuplicateId { also_in: path() },
+            Problem::UnknownStatus(text()),
+            Problem::SupersededWithoutReplacement,
+            Problem::ReplacementWithoutSuperseded,
+            Problem::SupersededBySelf,
+            Problem::ReplacementNotFound(id()),
+            Problem::NodeIdOutsideNodeFile(id()),
+            Problem::BrokenLink(text()),
+            Problem::MissingAnchor {
+                path: text(),
+                anchor: text(),
+            },
+            Problem::NoRootNode { expected: path() },
+            Problem::NestedTreeSkipped,
+            Problem::UnknownField(text()),
+            Problem::NodeFileWithoutId,
+            Problem::NodeTooLarge {
+                tokens: 2,
+                limit: 1,
+            },
+            Problem::MalformedDecisionId(text()),
+            Problem::DuplicateDecisionId { also_in: path() },
+            Problem::UnknownRecordStatus(text()),
+            Problem::RecordNodeNotFound(id()),
+            Problem::RecordInWrongFolder { node: id() },
+            Problem::SupersededRecordNotFound(decision()),
+            Problem::AcceptedTopicTwice {
+                topic: Topic::parse("page-size").expect("a valid topic"),
+                also_in: path(),
+            },
+            Problem::RecordTooLarge { tokens: 301 },
+        ];
+
+        let codes: Vec<&str> = problems.iter().map(Problem::code).collect();
+
+        assert_eq!(
+            codes,
+            [
+                "unparsable_frontmatter",
+                "missing_field",
+                "empty_field",
+                "unquoted_field",
+                "wrong_type",
+                "malformed_id",
+                "malformed_repo_ref",
+                "malformed_issue_ref",
+                "duplicate_id",
+                "unknown_status",
+                "superseded_without_replacement",
+                "replacement_without_superseded",
+                "superseded_by_self",
+                "replacement_not_found",
+                "node_id_outside_node_file",
+                "broken_link",
+                "missing_anchor",
+                "no_root_node",
+                "nested_tree_skipped",
+                "unknown_field",
+                "node_file_without_id",
+                "node_too_large",
+                "malformed_decision_id",
+                "duplicate_decision_id",
+                "unknown_record_status",
+                "record_node_not_found",
+                "record_in_wrong_folder",
+                "superseded_record_not_found",
+                "accepted_topic_twice",
+                "record_too_large",
+            ]
+        );
     }
 }

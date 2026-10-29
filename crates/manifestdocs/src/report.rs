@@ -45,16 +45,22 @@ pub fn relative(path: &Path, base: &Path) -> String {
 }
 
 pub fn finding_line(finding: &Finding, tree_root: &Path, cwd: &Path) -> String {
-    let mut path = relative(&tree_root.join(finding.file.as_str()), cwd);
-    if finding.problem == Problem::NestedTreeSkipped {
-        path.push('/');
-    }
+    let path = finding_path(finding, tree_root, cwd);
     let place = match finding.line {
         Some(line) => format!("{path}:{line}"),
         None => path,
     };
     let problem = &finding.problem;
     format!("{place}: {}: {problem}", problem.severity())
+}
+
+/// The finding's file from the current folder, with a `/` when it names a folder.
+pub fn finding_path(finding: &Finding, tree_root: &Path, cwd: &Path) -> String {
+    let mut path = relative(&tree_root.join(finding.file.as_str()), cwd);
+    if finding.problem == Problem::NestedTreeSkipped {
+        path.push('/');
+    }
+    path
 }
 
 fn summary(report: &Report) -> String {
