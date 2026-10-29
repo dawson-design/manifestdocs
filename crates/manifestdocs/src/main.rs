@@ -10,9 +10,10 @@ mod report;
 mod show;
 mod tree;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 /// Feature trees, agent context and decision records for docs repos.
 #[derive(Parser)]
@@ -37,6 +38,8 @@ enum Command {
         /// Skip the GitHub rules without calling `gh`
         #[arg(long)]
         offline: bool,
+        #[command(flatten)]
+        docs: DocsRef,
     },
     /// Print an outline of the nodes, with their IDs, statuses and files
     Tree {
@@ -48,6 +51,8 @@ enum Command {
         /// Print JSON, in schema version 1, instead of text
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        docs: DocsRef,
     },
     /// Print one node in full, with its parent and supporting docs
     Show {
@@ -56,6 +61,8 @@ enum Command {
         /// Print JSON, in schema version 1, instead of text
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        docs: DocsRef,
     },
     /// Print a node's context for a coding agent: the node, the root node, the docs it links
     /// to and the nodes around it
@@ -68,6 +75,11 @@ enum Command {
         /// An approximate token budget; what doesn't fit is left out and listed by path
         #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
         budget: Option<u32>,
+        /// Write the context to this file instead of stdout
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        docs: DocsRef,
     },
     /// Start a tree here: write manifestdocs.yaml and a root node
     Init {
@@ -88,6 +100,15 @@ impl Command {
     }
 }
 
+/// Which version of the docs a read command reads.
+#[derive(Args)]
+struct DocsRef {
+    /// Read the docs at this branch, tag or commit in the docs clone [default: the working
+    /// tree inside the docs clone, `origin/HEAD` from another repo]
+    #[arg(long = "ref", value_name = "REF")]
+    reference: Option<String>,
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Md,
@@ -105,20 +126,34 @@ fn main() -> ExitCode {
             strict,
             json,
             offline,
+            docs,
         } => {
             let github = match offline {
                 true => check::GitHub::Skip,
                 false => check::GitHub::Check,
             };
-            check::run(path.as_deref(), strict, json, github)
+            check::run(
+                path.as_deref(),
+                strict,
+                json,
+                github,
+                docs.reference.as_deref(),
+            )
         }
-        Command::Tree { path, depth, json } => tree::run(path.as_deref(), depth, json),
-        Command::Show { node, json } => show::run(&node, json),
+        Command::Tree {
+            path,
+            depth,
+            json,
+            docs,
+        } => tree::run(path.as_deref(), depth, json, docs.reference.as_deref()),
+        Command::Show { node, json, docs } => show::run(&node, json, docs.reference.as_deref()),
         Command::Context {
             node,
             format: Format::Md,
             budget,
-        } => context::run(&node, budget),
+            out,
+            docs,
+        } => context::run(&node, budget, out.as_deref(), docs.reference.as_deref()),
         Command::Init { title } => init::run(title.as_deref()),
     };
     result.unwrap_or_else(|error| match json {

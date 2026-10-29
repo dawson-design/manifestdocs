@@ -13,7 +13,7 @@ use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::refs::{Host, IssueRef, RepoRef};
 use manifestdocs_core::work::{GitHubAnswers, WorkLinks, with_github_findings, work_links};
 
-use crate::files;
+use crate::files::{self, ByDefault};
 use crate::gh::{self, GhError, Lookup};
 use crate::json;
 use crate::locate::locate;
@@ -27,7 +27,13 @@ pub enum GitHub {
 }
 
 /// With `strict`, warnings fail the check as errors do.
-pub fn run(path: Option<&str>, strict: bool, json: bool, github: GitHub) -> Result<ExitCode> {
+pub fn run(
+    path: Option<&str>,
+    strict: bool,
+    json: bool,
+    github: GitHub,
+    reference: Option<&str>,
+) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let start = match path {
         Some(path) => start_folder(path, &cwd)?,
@@ -43,17 +49,19 @@ pub fn run(path: Option<&str>, strict: bool, json: bool, github: GitHub) -> Resu
     if let Some(path) = path {
         in_tree(path, &cwd, &roots.tree_root)?;
     }
-    let config = files::read_config(&roots.tree_root, &cwd)?;
-    let mut snapshot = files::snapshot(&roots, &config, &cwd)?;
-    files::read_anchor_targets(&mut snapshot, &roots, &config, &cwd)?;
+    let docs = files::open(roots, reference, ByDefault::WorkingTree, &cwd)?;
+    let config = files::read_config(&docs, &cwd)?;
+    let mut snapshot = files::snapshot(&docs, &config, &cwd)?;
+    files::read_anchor_targets(&mut snapshot, &docs, &config, &cwd)?;
     let report = check(&config, &snapshot);
     let report = match github {
         GitHub::Check => with_github_rules(report, &config, &snapshot),
         GitHub::Skip => report,
     };
+    let tree_root = &docs.roots.tree_root;
     match json {
-        true => json::check(&report, &roots.tree_root, &cwd)?,
-        false => write_stdout(&render(&report, &roots.tree_root, &cwd))?,
+        true => json::check(&report, tree_root, &cwd)?,
+        false => write_stdout(&render(&report, tree_root, &cwd))?,
     }
     let failed = report.has_errors() || (strict && !report.findings.is_empty());
     Ok(if failed {

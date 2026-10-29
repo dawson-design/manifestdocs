@@ -52,12 +52,16 @@ impl Fixture {
         run_in_with_gh(&self.root.join(folder), &self.root, args, &self.fake_gh())
     }
 
-    /// Runs `manifestdocs` as `run` does, with an empty folder as the whole `PATH`, so no
-    /// `gh` can be found. Only for commands that run no other program.
+    /// Runs `manifestdocs` as `run` does, with a folder holding only `git` as the whole
+    /// `PATH`, so no `gh` can be found but the docs clone can still be read.
     pub fn run_without_gh(&self, folder: &str, args: &[&str]) -> Run {
-        let empty = self.fake_gh().join("empty");
-        fs::create_dir_all(&empty).expect("create an empty folder");
-        run_with_path(&self.root.join(folder), &self.root, args, empty.into())
+        let only_git = self.fake_gh().join("only-git");
+        fs::create_dir_all(&only_git).expect("create a folder for git");
+        let link = only_git.join("git");
+        if !link.exists() {
+            std::os::unix::fs::symlink(real_git(), &link).expect("link to git");
+        }
+        run_with_path(&self.root.join(folder), &self.root, args, only_git.into())
     }
 
     /// Has the fake `gh` know `issue` (`owner/name#number`) on `host` as an open issue.
@@ -205,6 +209,15 @@ fn command(folder: &Path, home: &Path, args: &[&str]) -> Command {
 /// The test's `PATH` with a `gh` that always fails first, as `run_in` sets it.
 pub fn path_without_gh() -> OsString {
     path_with(blocked_gh())
+}
+
+/// The `git` on the test's `PATH`.
+fn real_git() -> PathBuf {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path)
+        .map(|folder| folder.join("git"))
+        .find(|git| git.is_file())
+        .expect("git is on PATH")
 }
 
 /// The test's `PATH` with `folder` first.

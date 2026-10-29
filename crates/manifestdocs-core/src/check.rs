@@ -25,6 +25,33 @@ pub struct Snapshot {
     pub markdown: BTreeMap<RepoPath, String>,
 }
 
+/// What a path names in a snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listed {
+    File,
+    /// A folder that holds at least one listed file, or the tree root.
+    Folder,
+}
+
+impl Snapshot {
+    /// What `path`, a path in the tree, names, or `None` when the snapshot has no such file
+    /// or folder. A folder with no files in it isn't listed, as in git.
+    pub fn listed(&self, path: &TreePath) -> Option<Listed> {
+        if path.as_str().is_empty() {
+            return Some(Listed::Folder);
+        }
+        let path = self.tree_root.join(path.as_str())?;
+        if self.paths.contains(&path) {
+            return Some(Listed::File);
+        }
+        let folder = format!("{}/", path.as_str());
+        let mut files = self.paths.iter();
+        files
+            .any(|file| file.as_str().starts_with(&folder))
+            .then_some(Listed::Folder)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Report {
     pub nodes: usize,
