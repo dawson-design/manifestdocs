@@ -120,7 +120,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `check [path] [--json] [--offline]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder. With a `github` block, it also checks linked issues through `gh`, unless `--offline` |
 | `decide --file <path or -> [--dry-run] [--unattended] [--out dir] [--json]` | Writes a decision record and prints its path; see [Record a decision](#record-a-decision) |
 | `decisions [id or path] [--json] [--ref ref]` | Lists decision records for a node and its ancestors, or for the whole tree |
-| `work <id or path> [--json]` | Lists the issues a node links to in `work`, with their sub-issues at any depth, each with its issue type, open or closed state and how many sub-issues are done. Needs `gh` and a `github` block, and exits 1 when an issue can't be read |
+| `work <id or path> [--json] [--ref ref]` | Lists the issues a node links to in `work`, with their sub-issues at any depth, each with its issue type, open or closed state and how many sub-issues are done. Needs `gh` and a `github` block, and exits 1 when an issue can't be read |
 
 With `--json`, a command prints one JSON object for scripts, in the versioned schema in [the CLI spec](design/cli/cli.md#json-output), and exits with the same code as text. Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, or on warnings too with `--strict`, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
 

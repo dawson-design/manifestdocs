@@ -198,6 +198,25 @@ impl Fixture {
         );
     }
 
+    /// Has the fake `gh` answer the page of `issue`'s sub-issues after `cursor` on `host` as if
+    /// another page followed it at the same cursor, as a broken answer could.
+    pub fn gh_repeat_sub_issue_cursor(&self, host: &str, issue: &str, cursor: &str) {
+        let (repo, number) = issue.split_once('#').expect("an issue reference");
+        let file = format!("issues/{host}/{repo}/{number}.after-{cursor}.json");
+        let page = fs::read_to_string(self.fake_gh().join(&file)).expect("the page exists");
+        let last = r#""hasNextPage":false,"endCursor":null"#;
+        let again = format!(r#""hasNextPage":true,"endCursor":{}"#, json(cursor));
+        self.write_gh(&file, &page.replace(last, &again));
+    }
+
+    /// Has the fake `gh` fail every request as `gh` does on an HTTP error without GraphQL
+    /// errors, such as a 403 rate limit or a 502: `body` on stdout, `message` on stderr and
+    /// exit 1.
+    pub fn gh_http_error(&self, body: &str, message: &str) {
+        self.write_gh("http-error.json", body);
+        self.write_gh("http-error.stderr", message);
+    }
+
     /// Writes the fixture's fake `gh` and returns its folder, for a test that builds its own
     /// `PATH`.
     pub fn gh_folder(&self) -> PathBuf {
@@ -382,6 +401,11 @@ if [ -e "$dir/logged-out" ]; then
 fi
 if [ -e "$dir/unauthorized" ]; then
   echo 'gh: HTTP 401: Bad credentials (https://api.github.com/graphql)' >&2
+  exit 1
+fi
+if [ -e "$dir/http-error.json" ]; then
+  cat "$dir/http-error.json"
+  cat "$dir/http-error.stderr" >&2
   exit 1
 fi
 if [ -e "$dir/rate-limited" ]; then

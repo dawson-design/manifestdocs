@@ -193,7 +193,7 @@ fn work_issue<'a>(item: &WorkEntry<'a>) -> WorkIssue<'a> {
         issue_type: issue.and_then(|issue| issue.issue_type.as_deref()),
         parents: item.parents.iter().map(ToString::to_string).collect(),
         sub_issues_done: issue.and(item.done),
-        sub_issues_total: issue.map(|issue| issue.sub_issues.len()),
+        sub_issues_total: issue.and(item.total),
         listed_by: item.listed_by.map(|node| node.id.as_str()),
         sub_issues: item.sub_issues.iter().map(work_issue).collect(),
     }

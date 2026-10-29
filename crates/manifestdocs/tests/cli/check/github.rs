@@ -393,3 +393,35 @@ fn offline_json_skips_the_github_rules_without_calling_gh() {
     assert_eq!(run.code, 0);
     assert_eq!(fixture.gh_calls(), Vec::<String>::new());
 }
+
+#[test]
+fn ends_a_repos_search_with_a_note_when_github_repeats_a_cursor() {
+    let fixture = tree("gh-search-repeat", GITHUB, "");
+    let found = [(7, "feature: fd-000002")];
+    fixture.gh_search_page(
+        "github.com",
+        "acme/cookbook-docs",
+        None,
+        &found,
+        Some("c1"),
+        3,
+    );
+    fixture.gh_search_page(
+        "github.com",
+        "acme/cookbook-docs",
+        Some("c1"),
+        &found,
+        Some("c1"),
+        3,
+    );
+
+    let run = fixture.run_with_gh("", &["check"]);
+
+    assert_eq!(run.stdout, "2 nodes: no problems\n");
+    assert_eq!(
+        run.stderr,
+        "note: skipped searching `acme/cookbook-docs` for `feature:` lines: `gh` failed: GitHub repeated the page cursor `c1`\n"
+    );
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.gh_calls().len(), 2);
+}

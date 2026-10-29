@@ -198,7 +198,7 @@ enum DocsSource {
 // DocsVersion gains Commit { reference, commit, date } for the context header.
 ```
 
-- `check`, `tree` and `show` are authoring tools, so they read the docs clone's working tree wherever they run. `context` and `decisions` feed agents: walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so they read the working tree, and reaching the tree through a pointer from another repo means they read the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides the default, resolved in the docs clone.
+- `check`, `tree` and `show` are authoring tools, so they read the docs clone's working tree wherever they run. `context`, `decisions` and `work` feed agents: walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so they read the working tree, and reaching the tree through a pointer from another repo means they read the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides the default, resolved in the docs clone.
 - An unset `origin/HEAD` is an error that prints `git -C <docs clone> remote set-head origin --auto`. A tree outside git always reads the working tree, and `--ref` there is an error.
 - A commit's snapshot lists paths with `git ls-tree -r -z` and reads Markdown with one `git cat-file --batch`, so the core still gets a `Snapshot` and stays free of I/O.
 - Every git command runs with `GIT_NO_LAZY_FETCH=1`, so a partial clone missing an object fails with a message that names the commit. A `.git` that git can't run on, such as when `git` isn't installed or `safe.directory` refuses the clone, is an error, not a tree outside git.
@@ -219,7 +219,7 @@ struct Issue {
 }
 enum IssueState { Open, Closed }
 enum SubIssue { Issue(IssueRef), Unreadable(Unreadable) }  // GitHub can list a sub-issue it can't return
-enum Unreadable { NotFound, Failed(String) }               // why `gh` couldn't read one issue
+enum Unreadable { NotFound, Failed(String), Unlisted { after: usize } }  // why `gh` couldn't read an issue, or the sub-issues past a repeated page cursor
 struct IssueLinks { feature: Option<NodeId>, spec_ref: Option<String> }  // from `feature:` and `spec-ref:` body lines
 enum GhError { Missing, Unauthenticated { host: Host }, Failed(String) }
 
@@ -233,6 +233,7 @@ struct WorkEntry<'a> {
     issue: Result<&'a Issue, &'a Unreadable>,
     parents: Vec<&'a IssueRef>,                            // nearest first
     done: Option<usize>,                                   // closed sub-issues; `None` when taken over
+    total: Option<usize>,                                  // listed sub-issues; `None` when taken over
     listed_by: Option<&'a Entry>,
     sub_issues: Vec<WorkEntry<'a>>,
 }
@@ -244,7 +245,7 @@ MalformedFeatureLine { issue: IssueRef, value: String },  // warning, on manifes
 ```
 
 - `gh api graphql --hostname <github.host>` fetches issues in batches: one query per repo, with an alias for each issue, split into chunks when a repo has many. It reads each issue's parent, sub-issues and issue type when a command needs them. Sub-issues are read level by level until none are left.
-- An issue `gh` can't read, or every issue in a repo it can't read, is `Unreadable`, and doesn't stop the command: `work` marks it and exits 1. A failure of a whole query, such as a rate limit, is `GhError::Failed`.
+- An issue `gh` can't read, or every issue in a repo it can't read, is `Unreadable`, and doesn't stop the command: `work` marks it and exits 1. A failure of a whole query, such as a rate limit, is `GhError::Failed`, with `gh`'s own message when the answer has no GraphQL errors. `check`'s existence lookup differs on purpose: it doesn't need GitHub, so a repo it can't access skips that repo's work items with one `note:`.
 - `GhError` exits 2, except in `check`, which doesn't need GitHub: it prints a `note:` on stderr, skips the GitHub rules the error affects, and checks the rest. `Missing` says to install `gh`. `Unauthenticated` prints `gh auth login --hostname <host>`. Commands that don't need GitHub never call `gh`.
 - `IssueLinks` is parsed in the core from the body text. A line counts only when it starts with `feature:` or `spec-ref:`, outside code blocks.
 - Tests put a fake `gh` script first on `PATH`. It answers each request from JSON files in the fixture: issue lookups are keyed by issue reference, and searches by repo and page cursor. It fails on any request it has no file for, so a test can't reach GitHub.
