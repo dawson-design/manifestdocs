@@ -1,0 +1,36 @@
+# Called by release.yml after dist announces a release. Adds the bare
+# binaries that `gh extension install` needs to the same release.
+name: gh extension assets
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ inputs.plan }}
+      # The release lives in another repo, so the job writes with dist's token.
+      GH_TOKEN: ${{ secrets.GH_RELEASES_TOKEN }}
+      RELEASES_REPO: dawson-design/gh-manifestdocs
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Download the release archives
+        run: |
+          tag=$(echo "$PLAN" | jq -r .announcement_tag)
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          gh release download "$tag" --repo "$RELEASES_REPO" --pattern 'manifestdocs-*.tar.xz' --dir archives
+
+      - name: Name the binaries for gh
+        run: sh .github/scripts/gh-extension-assets.sh archives gh-assets
+
+      - name: Upload them to the release
+        run: gh release upload "$TAG" --repo "$RELEASES_REPO" gh-assets/*

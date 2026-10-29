@@ -22,3 +22,5 @@ source-tarball = false
 tap = "dawson-design/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
+# Jobs to run after the release is announced
+post-announce-jobs = ["./gh-extension-assets"]
