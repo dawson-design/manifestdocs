@@ -8,8 +8,8 @@ decided_by: alastair
 date: 2026-10-28
 ---
 
-**Decision.** Nodes can write requirements as `### Requirement:` headings with SHALL or MUST, each with `#### Scenario:` headings and WHEN and THEN lines. The author and verify skills use the convention. The binary doesn't parse it, and `check` doesn't enforce it. Implementation detail goes in a linked supporting doc or a child node, not the body.
+**Decision.** Nodes can write requirements as `### Requirement:` headings with SHALL or MUST, each with `#### Scenario:` headings and WHEN and THEN lines. The author and verify skills use it. The binary doesn't parse it, and `check` doesn't enforce it. Implementation detail goes in a linked supporting doc or a child node.
 
-**Why.** Scenarios give agents acceptance criteria they can test, and give the verify step something to check a diff against. Plain headings read well on GitHub, and their anchors let issues and records link to one requirement, which `check` already validates. Keeping detail out of the body keeps the ancestors `context` loads in full small.
+**Why.** Scenarios give agents testable acceptance criteria and give the verify step something to check a diff against. Plain headings read well on GitHub, and their anchors, which `check` validates, let issues and records link to one requirement. Keeping detail out of the body keeps the ancestors `context` loads in full small.
 
-**Rejected.** `show --requirements` and a `check` warning for a requirement with no scenario, which add format rules to the core before the convention has proved itself. Separate files for product and technical specs, since one tree holds both.
+**Rejected.** `show --requirements` and a `check` warning for a requirement with no scenario, which add format rules to the core before the convention proves itself. Separate files for product and technical specs, since one tree holds both.
