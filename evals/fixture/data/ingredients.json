@@ -1,0 +1,211 @@
+{
+  "arborio rice": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "bananas": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "basil leaves": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "beef": {
+    "aisle": "meat-fish",
+    "tags": [
+      "meat"
+    ]
+  },
+  "beef stock": {
+    "aisle": "pantry",
+    "tags": [
+      "meat"
+    ]
+  },
+  "bread slices": {
+    "aisle": "bakery",
+    "tags": []
+  },
+  "butter": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  },
+  "cabbage": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "carrots": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "chicken thighs": {
+    "aisle": "meat-fish",
+    "tags": [
+      "meat"
+    ]
+  },
+  "coconut milk": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "cream": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  },
+  "cucumber": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "cumin": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "eggplant": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "eggs": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "egg"
+    ]
+  },
+  "feta": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  },
+  "flour": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "garam masala": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "garlic cloves": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "honey": {
+    "aisle": "pantry",
+    "tags": [
+      "honey"
+    ]
+  },
+  "lemon": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "lime": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "mayonnaise": {
+    "aisle": "pantry",
+    "tags": [
+      "egg"
+    ]
+  },
+  "milk": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  },
+  "mushrooms": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "mustard": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "oats": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "olive oil": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "olives": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "onion": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "parmesan": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy",
+      "animal-rennet"
+    ]
+  },
+  "potatoes": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "red lentils": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "sour cream": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  },
+  "spaghetti": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "spring onions": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "sugar": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "tahini": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "tomatoes": {
+    "aisle": "produce",
+    "tags": []
+  },
+  "tortillas": {
+    "aisle": "bakery",
+    "tags": []
+  },
+  "turmeric": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "vegetable stock": {
+    "aisle": "pantry",
+    "tags": []
+  },
+  "white fish": {
+    "aisle": "meat-fish",
+    "tags": [
+      "fish"
+    ]
+  },
+  "yogurt": {
+    "aisle": "dairy-eggs",
+    "tags": [
+      "dairy"
+    ]
+  }
+}

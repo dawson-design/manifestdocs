@@ -1,0 +1,4 @@
+name: cookbook
+decisions:
+  merge: review
+statuses: [draft, approved]

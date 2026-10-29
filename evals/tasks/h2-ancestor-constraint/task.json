@@ -1,0 +1,13 @@
+{
+  "node": "docs/recipes/search/filters/cooking-time/cooking-time.md",
+  "needed_files": [
+    "docs/recipes/search/filters/cooking-time/cooking-time.md",
+    "docs/recipes/search/filters/filters.md"
+  ],
+  "facts": [
+    {
+      "file": "docs/recipes/search/filters/filters.md",
+      "sentinel": "A filter never hides a recipe because the recipe is missing the data"
+    }
+  ]
+}

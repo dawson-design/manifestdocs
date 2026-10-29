@@ -1,0 +1,468 @@
+[
+  {
+    "slug": "shakshuka",
+    "title": "Shakshuka",
+    "cuisine": "middle-eastern",
+    "serves": 2,
+    "minutes": 35,
+    "ingredients": [
+      {
+        "name": "tomatoes",
+        "quantity": 400,
+        "unit": "g"
+      },
+      {
+        "name": "onion",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "eggs",
+        "quantity": 4,
+        "unit": "whole"
+      },
+      {
+        "name": "olive oil",
+        "quantity": 2,
+        "unit": "tbsp"
+      },
+      {
+        "name": "cumin",
+        "quantity": 1,
+        "unit": "tsp"
+      },
+      {
+        "name": "feta",
+        "quantity": 50,
+        "unit": "g"
+      }
+    ]
+  },
+  {
+    "slug": "pancakes",
+    "title": "Pancakes",
+    "cuisine": "american",
+    "serves": 4,
+    "minutes": 25,
+    "ingredients": [
+      {
+        "name": "flour",
+        "quantity": 200,
+        "unit": "g"
+      },
+      {
+        "name": "milk",
+        "quantity": 300,
+        "unit": "ml"
+      },
+      {
+        "name": "eggs",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "butter",
+        "quantity": 30,
+        "unit": "g"
+      },
+      {
+        "name": "sugar",
+        "quantity": 1,
+        "unit": "tbsp"
+      }
+    ]
+  },
+  {
+    "slug": "baba-ganoush",
+    "title": "Baba ganoush",
+    "cuisine": "middle-eastern",
+    "serves": 4,
+    "minutes": 60,
+    "ingredients": [
+      {
+        "name": "eggplant",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "tahini",
+        "quantity": 3,
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "olive oil",
+        "quantity": 2,
+        "unit": "tbsp"
+      }
+    ]
+  },
+  {
+    "slug": "soft-boiled-eggs",
+    "title": "Soft-boiled eggs with soldiers",
+    "cuisine": "british",
+    "serves": 1,
+    "minutes": 10,
+    "ingredients": [
+      {
+        "name": "eggs",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "bread slices",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "butter",
+        "quantity": 10,
+        "unit": "g"
+      }
+    ]
+  },
+  {
+    "slug": "chicken-tikka-masala",
+    "title": "Chicken tikka masala",
+    "cuisine": "indian",
+    "serves": 4,
+    "minutes": 50,
+    "ingredients": [
+      {
+        "name": "chicken thighs",
+        "quantity": 500,
+        "unit": "g"
+      },
+      {
+        "name": "yogurt",
+        "quantity": 150,
+        "unit": "g"
+      },
+      {
+        "name": "tomatoes",
+        "quantity": 400,
+        "unit": "g"
+      },
+      {
+        "name": "onion",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "garam masala",
+        "quantity": 2,
+        "unit": "tsp"
+      },
+      {
+        "name": "cream",
+        "quantity": 100,
+        "unit": "ml"
+      }
+    ]
+  },
+  {
+    "slug": "red-lentil-dal",
+    "title": "Red lentil dal",
+    "cuisine": "indian",
+    "serves": 4,
+    "minutes": 40,
+    "ingredients": [
+      {
+        "name": "red lentils",
+        "quantity": 250,
+        "unit": "g"
+      },
+      {
+        "name": "onion",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": 3,
+        "unit": "whole"
+      },
+      {
+        "name": "turmeric",
+        "quantity": 1,
+        "unit": "tsp"
+      },
+      {
+        "name": "coconut milk",
+        "quantity": 400,
+        "unit": "ml"
+      }
+    ]
+  },
+  {
+    "slug": "fish-tacos",
+    "title": "Fish tacos",
+    "cuisine": "mexican",
+    "serves": 4,
+    "minutes": 30,
+    "ingredients": [
+      {
+        "name": "white fish",
+        "quantity": 400,
+        "unit": "g"
+      },
+      {
+        "name": "tortillas",
+        "quantity": 8,
+        "unit": "whole"
+      },
+      {
+        "name": "lime",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "sour cream",
+        "quantity": 100,
+        "unit": "g"
+      },
+      {
+        "name": "cabbage",
+        "quantity": 200,
+        "unit": "g"
+      }
+    ]
+  },
+  {
+    "slug": "grandmas-beef-stew",
+    "title": "Grandma's beef stew",
+    "cuisine": "british",
+    "serves": 6,
+    "minutes": null,
+    "ingredients": [
+      {
+        "name": "beef",
+        "quantity": 800,
+        "unit": "g"
+      },
+      {
+        "name": "potatoes",
+        "quantity": 600,
+        "unit": "g"
+      },
+      {
+        "name": "carrots",
+        "quantity": 3,
+        "unit": "whole"
+      },
+      {
+        "name": "onion",
+        "quantity": 2,
+        "unit": "whole"
+      },
+      {
+        "name": "beef stock",
+        "quantity": 1000,
+        "unit": "ml"
+      }
+    ]
+  },
+  {
+    "slug": "banana-bread",
+    "title": "Aunt Rose's banana bread",
+    "cuisine": "american",
+    "serves": 8,
+    "minutes": null,
+    "ingredients": [
+      {
+        "name": "bananas",
+        "quantity": 3,
+        "unit": "whole"
+      },
+      {
+        "name": "flour",
+        "quantity": 250,
+        "unit": "g"
+      },
+      {
+        "name": "sugar",
+        "quantity": 100,
+        "unit": "g"
+      },
+      {
+        "name": "butter",
+        "quantity": 100,
+        "unit": "g"
+      },
+      {
+        "name": "eggs",
+        "quantity": 2,
+        "unit": "whole"
+      }
+    ]
+  },
+  {
+    "slug": "pasta-pomodoro",
+    "title": "Pasta al pomodoro",
+    "cuisine": "italian",
+    "serves": 4,
+    "minutes": 25,
+    "ingredients": [
+      {
+        "name": "spaghetti",
+        "quantity": 400,
+        "unit": "g"
+      },
+      {
+        "name": "tomatoes",
+        "quantity": 800,
+        "unit": "g"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": 3,
+        "unit": "whole"
+      },
+      {
+        "name": "basil leaves",
+        "quantity": 10,
+        "unit": "whole"
+      },
+      {
+        "name": "olive oil",
+        "quantity": 3,
+        "unit": "tbsp"
+      }
+    ]
+  },
+  {
+    "slug": "potato-salad",
+    "title": "Potato salad",
+    "cuisine": "american",
+    "serves": 6,
+    "minutes": 30,
+    "ingredients": [
+      {
+        "name": "potatoes",
+        "quantity": 750,
+        "unit": "g"
+      },
+      {
+        "name": "mayonnaise",
+        "quantity": 4,
+        "unit": "tbsp"
+      },
+      {
+        "name": "spring onions",
+        "quantity": 4,
+        "unit": "whole"
+      },
+      {
+        "name": "mustard",
+        "quantity": 1,
+        "unit": "tsp"
+      }
+    ]
+  },
+  {
+    "slug": "overnight-oats",
+    "title": "Overnight oats",
+    "cuisine": "british",
+    "serves": 1,
+    "minutes": 10,
+    "ingredients": [
+      {
+        "name": "oats",
+        "quantity": 50,
+        "unit": "g"
+      },
+      {
+        "name": "milk",
+        "quantity": 150,
+        "unit": "ml"
+      },
+      {
+        "name": "honey",
+        "quantity": 1,
+        "unit": "tsp"
+      }
+    ]
+  },
+  {
+    "slug": "greek-salad",
+    "title": "Greek salad",
+    "cuisine": "greek",
+    "serves": 2,
+    "minutes": 15,
+    "ingredients": [
+      {
+        "name": "tomatoes",
+        "quantity": 300,
+        "unit": "g"
+      },
+      {
+        "name": "cucumber",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "feta",
+        "quantity": 100,
+        "unit": "g"
+      },
+      {
+        "name": "olives",
+        "quantity": 50,
+        "unit": "g"
+      },
+      {
+        "name": "olive oil",
+        "quantity": 2,
+        "unit": "tbsp"
+      }
+    ]
+  },
+  {
+    "slug": "mushroom-risotto",
+    "title": "Mushroom risotto",
+    "cuisine": "italian",
+    "serves": 4,
+    "minutes": 45,
+    "ingredients": [
+      {
+        "name": "arborio rice",
+        "quantity": 300,
+        "unit": "g"
+      },
+      {
+        "name": "mushrooms",
+        "quantity": 250,
+        "unit": "g"
+      },
+      {
+        "name": "onion",
+        "quantity": 1,
+        "unit": "whole"
+      },
+      {
+        "name": "vegetable stock",
+        "quantity": 1000,
+        "unit": "ml"
+      },
+      {
+        "name": "parmesan",
+        "quantity": 50,
+        "unit": "g"
+      },
+      {
+        "name": "butter",
+        "quantity": 30,
+        "unit": "g"
+      }
+    ]
+  }
+]

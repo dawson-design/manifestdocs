@@ -1,0 +1,13 @@
+{
+  "node": "docs/recipes/scaling/scaling.md",
+  "needed_files": [
+    "docs/recipes/scaling/scaling.md",
+    "docs/recipes/scaling/user-testing.md"
+  ],
+  "facts": [
+    {
+      "file": "docs/recipes/scaling/user-testing.md",
+      "sentinel": "items counted whole round up to the next whole number"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "shakshuka": [
+    5,
+    4,
+    4
+  ],
+  "pancakes": [
+    5,
+    5
+  ],
+  "chicken-tikka-masala": [
+    5,
+    5,
+    4,
+    5,
+    4,
+    5,
+    5
+  ],
+  "red-lentil-dal": [
+    4,
+    4,
+    5,
+    3
+  ],
+  "fish-tacos": [
+    4
+  ],
+  "grandmas-beef-stew": [
+    5,
+    5,
+    5,
+    4,
+    5
+  ],
+  "pasta-pomodoro": [
+    4,
+    5,
+    5,
+    3,
+    4,
+    5,
+    4,
+    4,
+    5,
+    5,
+    4,
+    4
+  ],
+  "potato-salad": [
+    3,
+    2,
+    4
+  ],
+  "overnight-oats": [
+    3,
+    4,
+    3,
+    3
+  ],
+  "greek-salad": [
+    5,
+    4
+  ],
+  "mushroom-risotto": [
+    4,
+    5,
+    4,
+    4,
+    3,
+    5
+  ]
+}

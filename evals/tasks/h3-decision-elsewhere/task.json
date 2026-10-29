@@ -1,0 +1,13 @@
+{
+  "node": "docs/shopping-list/shopping-list.md",
+  "needed_files": [
+    "docs/shopping-list/shopping-list.md",
+    "docs/decisions/2026-10-06-aisle-order.md"
+  ],
+  "facts": [
+    {
+      "file": "docs/decisions/2026-10-06-aisle-order.md",
+      "sentinel": "in the order a reader walks the store"
+    }
+  ]
+}

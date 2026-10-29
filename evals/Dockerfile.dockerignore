@@ -1,0 +1,8 @@
+# The image needs only the crates to build manifestdocs and the plugin with its marketplace.
+# Everything else, evals/ included (tasks, solutions, checklists, graders), stays out.
+*
+!Cargo.toml
+!Cargo.lock
+!crates
+!.claude-plugin
+!plugins/manifestdocs

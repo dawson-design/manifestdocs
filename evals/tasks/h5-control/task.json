@@ -1,0 +1,12 @@
+{
+  "node": "docs/recipes/ratings/ratings.md",
+  "needed_files": [
+    "docs/recipes/ratings/ratings.md"
+  ],
+  "facts": [
+    {
+      "file": "docs/recipes/ratings/ratings.md",
+      "sentinel": "A recipe with fewer than 3 ratings SHALL show"
+    }
+  ]
+}

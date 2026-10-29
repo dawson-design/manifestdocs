@@ -1,0 +1,13 @@
+{
+  "node": "docs/recipes/search/search.md",
+  "needed_files": [
+    "docs/recipes/search/search.md",
+    "docs/recipes/search/decisions/2026-09-11-whole-words.md"
+  ],
+  "facts": [
+    {
+      "file": "docs/recipes/search/decisions/2026-09-11-whole-words.md",
+      "sentinel": "Substring matching returned Baba ganoush"
+    }
+  ]
+}
