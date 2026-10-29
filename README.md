@@ -116,6 +116,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `init [title]` | Starts a tree in the current folder |
 | `tree [path] [--depth n] [--json]` | Outlines the nodes, from the root or from a node or folder |
 | `context <id or path> [--budget n] [--out path]` | Prints a node's context for an agent, or writes it to a file |
+| `context <owner/name#number> [--budget n] [--out path]` | Prints a GitHub issue, its parent issues and the context of the node it links to, through a node's `work` or a `feature:` line. Needs `gh` and a `github` block, and exits 1 when a parent issue can't be read |
 | `show <id or path> [--json]` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
 | `check [path] [--json] [--offline]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder. With a `github` block, it also checks linked issues through `gh`, unless `--offline` |
 | `decide --file <path or -> [--dry-run] [--unattended] [--out dir] [--json]` | Writes a decision record and prints its path; see [Record a decision](#record-a-decision) |

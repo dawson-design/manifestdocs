@@ -207,11 +207,12 @@ enum DocsSource {
 
 ```rust
 // Everything the binary reads through `gh`. It never writes.
-// `work` reads this shape. `context <issue>` (B3) and `stale` (B4) add `body: String` and
-// `created_at: String` (RFC 3339, for the spec-ref fallback) when they need them.
+// `work` and `context <issue>` read this shape. `stale` (B4) adds `created_at: String`
+// (RFC 3339, for the spec-ref fallback) when it needs it.
 struct Issue {
     reference: IssueRef,               // owner/repo#n
     title: String,
+    body: String,                      // "" unless the command asks for it, as `context` does
     state: IssueState,
     issue_type: Option<String>,        // a display label only
     parent: Option<IssueRef>,
@@ -237,6 +238,14 @@ struct WorkEntry<'a> {
     listed_by: Option<&'a Entry>,
     sub_issues: Vec<WorkEntry<'a>>,
 }
+
+// `context <issue>`, in the core
+struct IssueChain {
+    issue: Issue,
+    parents: Vec<Result<Issue, (IssueRef, Unreadable)>>,  // nearest first, to the top or the first unreadable
+    closed: BTreeSet<IssueKey>,                            // closed sub-issues, for "n of m done"
+}
+enum Unlinked { NoNode(IssueRef), FeatureLine(Problem) }  // exit 2; `Problem` is one of the two `feature:` warnings below
 
 // New `Problem` variants for `check`'s GitHub rules
 IssueNotFound(IssueRef),                                  // error, on the node's `work` line

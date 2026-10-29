@@ -1,11 +1,14 @@
 //! Links to work: the node links in issue bodies, `check`'s rules for the issues a tree
-//! references and the issues that name its nodes, and the sub-issue hierarchy `work` shows.
+//! references and the issues that name its nodes, the sub-issue hierarchy `work` shows, and
+//! the node an issue links to for `context`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::iter;
 use std::ops::Range;
 
 use pulldown_cmark::{Event, Parser, Tag};
+use thiserror::Error;
 
 use crate::check::{Report, Snapshot, read_node};
 use crate::config::{self, TreeConfig};
@@ -201,12 +204,14 @@ fn feature_findings(node_ids: &BTreeSet<NodeId>, searched: &[IssueBody]) -> Vec<
         .collect()
 }
 
-/// An issue as `work` reads it through `gh`. `context <issue>` and `stale` add the body and
-/// the creation time when they need them.
+/// An issue as `work` and `context` read it through `gh`. `stale` adds the creation time when
+/// it needs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Issue {
     pub reference: IssueRef,
     pub title: String,
+    /// `""` when the command doesn't ask for it, as `work` doesn't.
+    pub body: String,
     pub state: IssueState,
     /// A display label only, such as `Epic`.
     pub issue_type: Option<String>,
@@ -219,6 +224,15 @@ pub struct Issue {
 pub enum IssueState {
     Open,
     Closed,
+}
+
+impl IssueState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
 }
 
 /// One entry in an issue's list of sub-issues.
@@ -239,6 +253,20 @@ pub enum Unreadable {
     /// GitHub stopped listing an issue's sub-issues after `after` of them by repeating a page
     /// cursor, so the rest couldn't be read.
     Unlisted { after: usize },
+}
+
+/// Why an issue has no title, in `work`'s and `context`'s output.
+impl fmt::Display for Unreadable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("not an issue you can read on GitHub"),
+            Self::Failed(message) => write!(f, "can't read it on GitHub: {message}"),
+            Self::Unlisted { after } => write!(
+                f,
+                "sub-issues past {after} couldn't be read, since GitHub repeated a page cursor"
+            ),
+        }
+    }
 }
 
 /// An issue reference compared without case, as GitHub compares owner and repo names.
@@ -445,6 +473,110 @@ fn unreadable_sub_issue<'a>(why: &'a Unreadable, parents: Vec<&'a IssueRef>) -> 
         listed_by: None,
         sub_issues: Vec::new(),
     }
+}
+
+/// The issue `context` is asked for, with the issues above it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IssueChain {
+    pub issue: Issue,
+    /// Nearest first, up to the top, or up to and including the first one `gh` can't read.
+    pub parents: Vec<Result<Issue, (IssueRef, Unreadable)>>,
+    /// The closed issues among their sub-issues.
+    pub closed: BTreeSet<IssueKey>,
+}
+
+/// Why an issue's `context` can't name a node.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum Unlinked {
+    #[error(
+        "issue `{0}` links to no node: no node lists it or a parent in `work`, and none of them has a `feature:` line"
+    )]
+    NoNode(IssueRef),
+    /// `IssueNamesUnknownNode` or `MalformedFeatureLine`, worded as `check` words it.
+    #[error("{0}")]
+    FeatureLine(Problem),
+}
+
+impl IssueChain {
+    /// The sub-issues of the issue and of each parent `gh` read, whose states count as done.
+    pub fn sub_issues(&self) -> Vec<IssueRef> {
+        let parents = self
+            .parents
+            .iter()
+            .filter_map(|parent| parent.as_ref().ok());
+        let issues = iter::once(&self.issue).chain(parents);
+        let subs = issues.flat_map(|issue| issue.sub_issues.iter());
+        subs.filter_map(|sub| match sub {
+            SubIssue::Issue(sub) => Some(sub.clone()),
+            SubIssue::Unreadable(_) => None,
+        })
+        .collect()
+    }
+
+    /// How many of `issue`'s sub-issues are closed, and how many GitHub listed.
+    pub fn progress(&self, issue: &Issue) -> (usize, usize) {
+        let subs = issue.sub_issues.iter().filter(|sub| !is_unlisted(sub));
+        let closed = |sub: &&SubIssue| match sub {
+            SubIssue::Issue(sub) => self.closed.contains(&IssueKey::from(sub)),
+            SubIssue::Unreadable(_) => false,
+        };
+        let total = subs.clone().count();
+        (subs.filter(closed).count(), total)
+    }
+
+    /// The node the issue links to. From the issue up through its parents, the first that a
+    /// node lists in `work`, or whose body has a `feature:` line, names it. On one issue, a
+    /// node's `work` comes first, and of two `feature:` lines, the first.
+    pub fn linked_node<'a>(&self, tree: &'a Tree) -> Result<&'a Entry, Unlinked> {
+        let listed = listed_work(tree);
+        let parents = self.parents.iter().map(|parent| match parent {
+            Ok(issue) => (&issue.reference, Some(issue.body.as_str())),
+            Err((reference, _)) => (reference, None),
+        });
+        let issue = (&self.issue.reference, Some(self.issue.body.as_str()));
+        for (reference, body) in iter::once(issue).chain(parents) {
+            if let Some(entry) = listed.get(&IssueKey::from(reference)) {
+                return Ok(entry);
+            }
+            if let Some(value) = body.and_then(|body| value(body, "feature:")) {
+                return named_node(tree, reference, value);
+            }
+        }
+        Err(Unlinked::NoNode(self.issue.reference.clone()))
+    }
+}
+
+/// The node a `feature:` line's `value` names.
+fn named_node<'a>(tree: &'a Tree, issue: &IssueRef, value: &str) -> Result<&'a Entry, Unlinked> {
+    let issue = issue.clone();
+    let Some(id) = NodeId::parse(value) else {
+        let value = value.to_owned();
+        return Err(Unlinked::FeatureLine(Problem::MalformedFeatureLine {
+            issue,
+            value,
+        }));
+    };
+    let entry = tree.entries.values().find(|entry| entry.id == id);
+    entry.ok_or(Unlinked::FeatureLine(Problem::IssueNamesUnknownNode {
+        issue,
+        id,
+    }))
+}
+
+/// Each issue the tree's nodes list in `work`, with the node it links to. When two nodes list
+/// one issue, the shallower node takes it, and of two at one depth, the first in outline
+/// order, as in `takeovers`.
+fn listed_work(tree: &Tree) -> BTreeMap<IssueKey, &Entry> {
+    let mut nodes = tree.outline(&TreePath::default(), None);
+    nodes.sort_by_key(|(level, _)| *level);
+    let mut listed = BTreeMap::new();
+    for (_, entry) in nodes {
+        let work = entry.node.iter().flat_map(|node| node.work.iter());
+        for issue in work {
+            listed.entry(IssueKey::from(issue)).or_insert(entry);
+        }
+    }
+    listed
 }
 
 #[cfg(test)]

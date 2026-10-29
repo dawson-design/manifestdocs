@@ -13,6 +13,7 @@ summary: "Links nodes to GitHub issues, reads their sub-issue hierarchy, and rep
 - When a deeper node lists a sub-issue in its own `work`, the deeper node applies to that issue and its sub-issues.
 - An issue outside that hierarchy names its node with a line in its body: `feature: fd-7c2e41`.
 - An issue can record the docs commit it was planned against: `spec-ref: <sha>`. Without one, the tool uses the last commit on the docs repo's default branch before the issue was created, so existing issues work without edits.
+- To find an issue's node, `context` walks up from the issue through its parents, and the first issue that a node lists in `work` or that has a `feature:` line decides. On one issue, `work` comes first, and of two `feature:` lines, the first. An issue that links to no node, or whose deciding `feature:` line is malformed or names a node not in the tree, stops `context` with an error.
 - The tool reads both directions and never writes a second copy of a link.
 - Manifest Docs doesn't use labels or Projects fields for node links. A label per node clutters a repo's label list. Projects fields are stored outside the issue, need a project-scoped token, and differ from project to project.
 

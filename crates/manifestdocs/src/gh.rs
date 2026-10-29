@@ -186,6 +186,57 @@ const ISSUE_FIELDS: &str = "fragment issue on Issue { number title state issueTy
     parent { number repository { nameWithOwner } } \
     subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } } }";
 
+/// The fields `context` reads for an issue and each issue above it: `work`'s, and the body.
+const CHAIN_FIELDS: &str = "fragment issue on Issue { number title body state issueType { name } \
+    parent { number repository { nameWithOwner } } \
+    subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } } }";
+
+/// Reads `issue` with its body and all its sub-issues, then each issue above it the same way,
+/// one at a time up to the top or to the first one `gh` can't read.
+pub fn fetch_chain(host: &Host, issue: &IssueRef) -> Result<Vec<(IssueRef, IssueOrWhy)>, GhError> {
+    let mut chain = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut next = Some(issue.clone());
+    // `seen` guards against a cycle, which GitHub's sub-issues can't form.
+    while let Some(reference) = next.take().filter(|r| seen.insert(IssueKey::from(r))) {
+        let none = Takeovers::new();
+        let numbers = [reference.number()];
+        let read = fetch_issues(host, reference.repo(), &numbers, &none, CHAIN_FIELDS)?;
+        let issue = read.into_iter().next().map(|(_, issue)| issue);
+        let issue = issue.unwrap_or(Err(Unreadable::NotFound));
+        next = issue.as_ref().ok().and_then(|issue| issue.parent.clone());
+        chain.push((reference, issue));
+    }
+    Ok(chain)
+}
+
+/// Which of `issues` are closed, asked in batches of up to 100 per repo. An issue `gh` can't
+/// read counts as open, as `work` counts it.
+pub fn fetch_closed(host: &Host, issues: &[IssueRef]) -> Result<BTreeSet<IssueKey>, GhError> {
+    let mut closed = BTreeSet::new();
+    for (repo, numbers) in by_repo(issues, |_| false) {
+        for batch in numbers.chunks(BATCH) {
+            let read = closed_in_batch(host, &repo, batch)?;
+            closed.extend(read.iter().map(IssueKey::from));
+        }
+    }
+    Ok(closed)
+}
+
+fn closed_in_batch(host: &Host, repo: &RepoRef, batch: &[u64]) -> Result<Vec<IssueRef>, GhError> {
+    let query = aliased_query(batch, "state");
+    let response = graphql(host, &repo_fields(&query, repo))?;
+    let read = |value: &Value, _: &str| Some(value.get("state")?.as_str()? == "CLOSED");
+    let answers = read_aliases(&response, batch, read).map_err(GhError::Failed)?;
+    let closed = answers
+        .into_iter()
+        .filter_map(|(number, answer)| match answer {
+            Answer::Found(true) => issue_ref(repo, number),
+            _ => None,
+        });
+    Ok(closed.collect())
+}
+
 /// Reads `issues` and their sub-issues at any depth, level by level until none are left: one
 /// query per repo for each level, in batches of up to 100 issues. It reads an issue in
 /// `takeovers` but not below it, since a deeper node takes its sub-issues. An issue `gh` can't
@@ -200,7 +251,8 @@ pub fn fetch_hierarchy(
     while !level.is_empty() {
         let mut next = Vec::new();
         for (repo, numbers) in by_repo(&level, |key| fetched.contains_key(key)) {
-            for (reference, issue) in fetch_issues(host, &repo, &numbers, takeovers)? {
+            let read = fetch_issues(host, &repo, &numbers, takeovers, ISSUE_FIELDS)?;
+            for (reference, issue) in read {
                 let key = IssueKey::from(&reference);
                 if let (Ok(issue), false) = (&issue, takeovers.contains_key(&key)) {
                     next.extend(issue.sub_issues.iter().filter_map(|sub| match sub {
@@ -277,19 +329,21 @@ fn by_repo(level: &[IssueRef], read: impl Fn(&IssueKey) -> bool) -> Vec<(RepoRef
 struct Read(Issue, Option<String>);
 
 /// An issue, or why `gh` couldn't read it.
-type IssueOrWhy = Result<Issue, Unreadable>;
+pub type IssueOrWhy = Result<Issue, Unreadable>;
 
 /// Reads each of `numbers` in `repo` with all its sub-issues, in batches of up to 100 issues.
+/// `fields` is the `issue` fragment to read.
 fn fetch_issues(
     host: &Host,
     repo: &RepoRef,
     numbers: &[u64],
     takeovers: &Takeovers,
+    fields: &str,
 ) -> Result<Vec<(IssueRef, IssueOrWhy)>, GhError> {
     let mut issues = Vec::new();
     for batch in numbers.chunks(BATCH) {
         let query = aliased_query(batch, "...issue");
-        let query = format!("{query} {ISSUE_FIELDS}");
+        let query = format!("{query} {fields}");
         let response = graphql(host, &repo_fields(&query, repo))?;
         let read = |value: &Value, alias: &str| read_issue(value, alias, repo, &response);
         for (number, answer) in read_aliases(&response, batch, read).map_err(GhError::Failed)? {
@@ -395,6 +449,11 @@ fn read_issue(value: &Value, alias: &str, repo: &RepoRef, response: &Value) -> O
     let issue = Issue {
         reference: issue_ref(repo, value.get("number")?.as_u64()?)?,
         title: value.get("title")?.as_str()?.to_owned(),
+        body: value
+            .get("body")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
         state,
         issue_type: value
             .pointer("/issueType/name")
@@ -643,6 +702,7 @@ mod tests {
             Issue {
                 reference: issue_ref("acme/docs#41"),
                 title: "Search".into(),
+                body: String::new(),
                 state: IssueState::Closed,
                 issue_type: Some("Epic".into()),
                 parent: Some(issue_ref("acme/roadmap#1")),

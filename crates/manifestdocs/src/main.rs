@@ -68,9 +68,11 @@ enum Command {
         docs: DocsRef,
     },
     /// Print a node's context for a coding agent: the node, the root node, the docs it links
-    /// to and the nodes around it
+    /// to and the nodes around it. For a GitHub issue, also the issue and its parents, read
+    /// with `gh`
     Context {
-        /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
+        /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), a node file or folder, or
+        /// an issue as `owner/name#number`
         node: String,
         /// The output format: Markdown, for agents
         #[arg(long, value_enum, default_value_t = Format::Md)]
