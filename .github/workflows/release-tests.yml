@@ -1,0 +1,31 @@
+# Called by release.yml beside the platform builds. dist's host job waits for
+# it, so a release is never created from a commit whose tests fail.
+name: release tests
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # rustup comes with the runner, so no toolchain action needs pinning.
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Test
+        run: cargo test

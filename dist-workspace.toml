@@ -25,4 +25,4 @@ tap = "dawson-design/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
 # Jobs whose `artifacts-*` uploads join the release before it is created
-global-artifacts-jobs = ["./gh-extension-assets"]
+global-artifacts-jobs = ["./gh-extension-assets", "./release-tests"]
