@@ -1,5 +1,6 @@
-# Called by release.yml after dist announces a release. Adds the bare
-# binaries that `gh extension install` needs to the same release.
+# Called by release.yml after the platform builds. Uploads the bare binaries
+# that `gh extension install` needs as an `artifacts-*` artifact, so dist's
+# host job adds them to the release with everything else.
 name: gh extension assets
 
 on:
@@ -13,24 +14,24 @@ permissions:
   contents: read
 
 jobs:
-  upload:
+  rename:
     runs-on: ubuntu-latest
-    env:
-      PLAN: ${{ inputs.plan }}
-      # The release lives in another repo, so the job writes with dist's token.
-      GH_TOKEN: ${{ secrets.GH_RELEASES_TOKEN }}
-      RELEASES_REPO: dawson-design/gh-manifestdocs
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - name: Download the release archives
-        run: |
-          tag=$(echo "$PLAN" | jq -r .announcement_tag)
-          echo "TAG=$tag" >> "$GITHUB_ENV"
-          gh release download "$tag" --repo "$RELEASES_REPO" --pattern 'manifestdocs-*.tar.xz' --dir archives
+      - name: Fetch the platform archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-build-local-*
+          path: archives
+          merge-multiple: true
 
       - name: Name the binaries for gh
         run: sh .github/scripts/gh-extension-assets.sh archives gh-assets
 
-      - name: Upload them to the release
-        run: gh release upload "$TAG" --repo "$RELEASES_REPO" gh-assets/*
+      - name: Hand them to the release
+        uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-gh-extension
+          path: gh-assets/*
+          if-no-files-found: error
