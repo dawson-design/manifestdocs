@@ -2,7 +2,7 @@
 id: dc-840d43d
 node: fd-ae6745
 title: "decide writes only the file"
-status: accepted
+status: superseded
 topic: decide-writes-file-only
 decided_by: alastair
 date: 2026-10-28
