@@ -117,7 +117,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `tree [path] [--depth n] [--json]` | Outlines the nodes, from the root or from a node or folder |
 | `context <id or path> [--budget n]` | Prints a node's context for an agent |
 | `show <id or path> [--json]` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
-| `check [path] [--json]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder |
+| `check [path] [--json] [--offline]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder. With a `github` block, it also checks linked issues through `gh`, unless `--offline` |
 
 With `--json`, a command prints one JSON object for scripts, in the versioned schema in [the CLI spec](design/cli/cli.md#json-output), and exits with the same code as text. Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, or on warnings too with `--strict`, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
 

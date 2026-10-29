@@ -31,4 +31,4 @@ Propose grows the tree from the work, so an existing codebase needs no tree up f
 
 Skills follow the open SKILL.md format so other harnesses can load them. An `AGENTS.md` snippet covers tools without skill support.
 
-The after-edit hook runs `check` on the edited file's tree after a Markdown or `manifestdocs.yaml` edit. It shows the agent the report only when the tree has errors or can't be checked, such as after a bad config edit, so edits to code and to files outside a tree pass silently. Before 1.0, the plugin installs from the local marketplace in the tool's own repo (see [distribution](../distribution/distribution.md)).
+The after-edit hook runs `check --offline` on the edited file's tree after a Markdown or `manifestdocs.yaml` edit, so it never calls GitHub. It shows the agent the report only when the tree has errors or can't be checked, such as after a bad config edit, so edits to code and to files outside a tree pass silently. Before 1.0, the plugin installs from the local marketplace in the tool's own repo (see [distribution](../distribution/distribution.md)).
