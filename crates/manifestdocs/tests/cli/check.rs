@@ -2,7 +2,9 @@
 
 mod anchors;
 mod dogfood;
+mod feature_lines;
 mod files;
+mod github;
 mod layout;
 mod links;
 mod nodes;

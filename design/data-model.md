@@ -219,9 +219,14 @@ struct Issue {
 enum IssueState { Open, Closed }
 struct IssueLinks { feature: Option<NodeId>, spec_ref: Option<String> }  // from `feature:` and `spec-ref:` body lines
 enum GhError { Missing, Unauthenticated { host: Host }, NotFound(IssueRef), Failed(String) }
+
+// New `Problem` variants for `check`'s GitHub rules
+IssueNotFound(IssueRef),                                  // error, on the node's `work` line
+IssueNamesUnknownNode { issue: IssueRef, id: NodeId },    // warning, on manifestdocs.yaml
+MalformedFeatureLine { issue: IssueRef, value: String },  // warning, on manifestdocs.yaml
 ```
 
-- `gh api graphql --hostname <github.host>` fetches each issue with its parent, sub-issues and issue type. Sub-issues are read level by level until none are left.
-- `GhError` exits 2. `Missing` says to install `gh`. `Unauthenticated` prints `gh auth login --hostname <host>`. Commands that don't need GitHub never call `gh`.
+- `gh api graphql --hostname <github.host>` fetches issues in batches: one query per repo, with an alias for each issue, split into chunks when a repo has many. It reads each issue's parent, sub-issues and issue type when a command needs them. Sub-issues are read level by level until none are left.
+- `GhError` exits 2, except in `check`, which doesn't need GitHub: it prints a `note:` on stderr, skips the GitHub rules the error affects, and checks the rest. `Missing` says to install `gh`. `Unauthenticated` prints `gh auth login --hostname <host>`. Commands that don't need GitHub never call `gh`.
 - `IssueLinks` is parsed in the core from the body text. A line counts only when it starts with `feature:` or `spec-ref:`, outside code blocks.
-- Tests put a fake `gh` script first on `PATH`. It answers each request from a JSON file in the fixture, keyed by issue reference, and fails on any request it has no file for, so a test can't reach GitHub.
+- Tests put a fake `gh` script first on `PATH`. It answers each request from JSON files in the fixture: issue lookups are keyed by issue reference, and searches by repo and page cursor. It fails on any request it has no file for, so a test can't reach GitHub.
