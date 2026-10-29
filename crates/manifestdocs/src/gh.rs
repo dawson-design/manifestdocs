@@ -188,8 +188,8 @@ fn next_page(search: &Value) -> Option<String> {
     more.then(|| cursor.to_owned())
 }
 
-/// The fields `work` reads for each issue, with its first 100 sub-issues.
-const ISSUE_FIELDS: &str = "fragment issue on Issue { number title state issueType { name } \
+/// The fields `work` and `stale` read for each issue, with its first 100 sub-issues.
+const ISSUE_FIELDS: &str = "fragment issue on Issue { number title state body createdAt issueType { name } \
     parent { number repository { nameWithOwner } } \
     subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } } }";
 
@@ -409,6 +409,8 @@ fn read_issue(value: &Value, alias: &str, repo: &RepoRef, response: &Value) -> O
             .map(str::to_owned),
         parent: value.get("parent").and_then(listed_issue),
         sub_issues: listed_sub_issues(sub_issues, response, &nodes),
+        body: value.get("body")?.as_str()?.to_owned(),
+        created_at: value.get("createdAt")?.as_str()?.to_owned(),
     };
     Some(Read(issue, next_page(sub_issues)))
 }
@@ -619,7 +621,8 @@ mod tests {
     #[test]
     fn reads_an_issue_with_its_type_parent_sub_issues_and_next_page() {
         let response = r#"{"data":{"repository":{"i41":{"number":41,"title":"Search",
-            "state":"CLOSED","issueType":{"name":"Epic"},
+            "state":"CLOSED","body":"spec-ref: 4f1c2ab","createdAt":"2026-10-01T09:30:00Z",
+            "issueType":{"name":"Epic"},
             "parent":{"number":1,"repository":{"nameWithOwner":"acme/roadmap"}},
             "subIssues":{"pageInfo":{"hasNextPage":true,"endCursor":"c1"},
               "nodes":[{"number":3,"repository":{"nameWithOwner":"acme/web"}}]}},
@@ -654,6 +657,8 @@ mod tests {
                 issue_type: Some("Epic".into()),
                 parent: Some(issue_ref("acme/roadmap#1")),
                 sub_issues: vec![SubIssue::Issue(issue_ref("acme/web#3"))],
+                body: "spec-ref: 4f1c2ab".into(),
+                created_at: "2026-10-01T09:30:00Z".into(),
             }
         );
     }

@@ -88,9 +88,11 @@ impl Fixture {
             format!(r#"{{"name":{}}}"#, json(name))
         });
         let parent = details.parent.map_or("null".to_owned(), issue_node);
+        let created_at = details.created_at.unwrap_or("2026-10-01T09:30:00Z");
         let json = format!(
-            r#"{{"number":{number},"title":{},"state":"{state}","createdAt":"2026-10-01T09:30:00Z","body":"","issueType":{issue_type},"parent":{parent},"subIssues":{}}}"#,
+            r#"{{"number":{number},"title":{},"state":"{state}","createdAt":"{created_at}","body":{},"issueType":{issue_type},"parent":{parent},"subIssues":{}}}"#,
             json(details.title),
+            json(details.body),
             page(0)
         );
         self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
@@ -336,8 +338,8 @@ impl Drop for Fixture {
     }
 }
 
-/// An issue for the fake `gh` to know, with the fields `work` reads. Issues are written as
-/// `owner/name#number`.
+/// An issue for the fake `gh` to know, with the fields `work` and `stale` read. Issues are
+/// written as `owner/name#number`.
 #[derive(Default)]
 pub struct GhIssue<'a> {
     pub title: &'a str,
@@ -346,6 +348,9 @@ pub struct GhIssue<'a> {
     pub parent: Option<&'a str>,
     /// In GitHub's order.
     pub sub_issues: &'a [&'a str],
+    pub body: &'a str,
+    /// RFC 3339 [default: 2026-10-01T09:30:00Z]
+    pub created_at: Option<&'a str>,
 }
 
 /// An issue as GitHub's GraphQL API names one in a list: its number and its repo. `-` is a

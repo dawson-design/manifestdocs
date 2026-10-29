@@ -207,8 +207,7 @@ enum DocsSource {
 
 ```rust
 // Everything the binary reads through `gh`. It never writes.
-// `work` reads this shape. `context <issue>` (B3) and `stale` (B4) add `body: String` and
-// `created_at: String` (RFC 3339, for the spec-ref fallback) when they need them.
+// `work` and `stale` read this shape.
 struct Issue {
     reference: IssueRef,               // owner/repo#n
     title: String,
@@ -216,6 +215,8 @@ struct Issue {
     issue_type: Option<String>,        // a display label only
     parent: Option<IssueRef>,
     sub_issues: Vec<SubIssue>,         // in GitHub's order
+    body: String,
+    created_at: String,                // RFC 3339, for the spec-ref fallback
 }
 enum IssueState { Open, Closed }
 enum SubIssue { Issue(IssueRef), Unreadable(Unreadable) }  // GitHub can list a sub-issue it can't return

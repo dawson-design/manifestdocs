@@ -190,8 +190,7 @@ fn feature_findings(node_ids: &BTreeSet<NodeId>, searched: &[IssueBody]) -> Vec<
         .collect()
 }
 
-/// An issue as `work` reads it through `gh`. `context <issue>` and `stale` add the body and
-/// the creation time when they need them.
+/// An issue as `work` and `stale` read it through `gh`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Issue {
     pub reference: IssueRef,
@@ -202,6 +201,9 @@ pub struct Issue {
     pub parent: Option<IssueRef>,
     /// In GitHub's order.
     pub sub_issues: Vec<SubIssue>,
+    pub body: String,
+    /// RFC 3339, such as `2026-10-01T09:30:00Z`.
+    pub created_at: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
