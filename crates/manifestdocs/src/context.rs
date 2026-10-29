@@ -42,7 +42,7 @@ pub fn run(
     let chain = IssueRef::parse(arg).map(|issue| issue_chain(&tree, &issue));
     let chain = chain.transpose()?;
     let entry = match &chain {
-        Some(chain) => chain.linked_node(&tree)?,
+        Some(chain) => chain.linked_node(&tree, &snapshot)?,
         None => select_node(&tree, &snapshot, arg, &paths)?,
     };
     if let Err(findings) = &entry.node {

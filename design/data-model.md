@@ -245,7 +245,11 @@ struct IssueChain {
     parents: Vec<Result<Issue, (IssueRef, Unreadable)>>,  // nearest first, to the top or the first unreadable
     closed: BTreeSet<IssueKey>,                            // closed sub-issues, for "n of m done"
 }
-enum Unlinked { NoNode(IssueRef), FeatureLine(Problem) }  // exit 2; `Problem` is one of the two `feature:` warnings below
+enum Unlinked {                                            // exit 2
+    NoNode(IssueRef),
+    UnreadableParent { issue: IssueRef, parent: IssueRef, why: Unreadable },  // nothing below `parent` links to a node
+    FeatureLine(Problem),                                  // one of the two `feature:` warnings below
+}
 
 // New `Problem` variants for `check`'s GitHub rules
 IssueNotFound(IssueRef),                                  // error, on the node's `work` line

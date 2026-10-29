@@ -118,6 +118,21 @@ pub fn declared_id(frontmatter: &Frontmatter) -> Option<NodeId> {
     }
 }
 
+/// The issues a node file lists in `work`, read even when another field has errors, so an
+/// issue still links to a broken node. Malformed items are left out, since `check` reports them.
+pub fn listed_work(text: &str) -> Vec<IssueRef> {
+    let Split::Present(frontmatter) = frontmatter::split(text) else {
+        return Vec::new();
+    };
+    let Ok(values) = frontmatter::values(frontmatter.yaml) else {
+        return Vec::new();
+    };
+    match value(&values, Field::Work) {
+        Some(Value::List(items)) => items.iter().filter_map(|i| IssueRef::parse(i)).collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn rejected(file: &TreePath, location: NodeLocation, problem: Problem) -> ParsedNode {
     let finding = Finding {
         file: file.clone(),
