@@ -3,6 +3,11 @@ name = "manifestdocs"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+# dist builds installer download URLs from `repository`. The source repo is
+# private, so this names the public repo that hosts the releases.
+repository = "https://github.com/dawson-design/gh-manifestdocs"
+homepage = "https://github.com/dawson-design/gh-manifestdocs"
+description = "Turns a folder of Markdown in a docs repo into a feature tree for agents and people"
 default-run = "manifestdocs"
 
 [dependencies]
@@ -16,3 +21,7 @@ serde_json = "1.0.154"
 [[bin]]
 name = "mfd"
 path = "src/bin/mfd.rs"
+
+# publish = false keeps the crate off crates.io; this still releases its binaries.
+[package.metadata.dist]
+dist = true
