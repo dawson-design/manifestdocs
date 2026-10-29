@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::id::NodeId;
 use crate::paths::TreePath;
+use crate::record::{DecisionId, RECORD_TOKENS, Topic};
 use crate::tokens::grouped;
 
 /// One problem in one file. `file` can name a folder, such as a skipped nested tree.
@@ -30,6 +31,13 @@ pub enum Field {
     Repos,
     Work,
     SupersededBy,
+    Node,
+    Topic,
+    DecidedBy,
+    Date,
+    Source,
+    AppliesTo,
+    Supersedes,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,6 +79,25 @@ pub enum Problem {
         tokens: u32,
         limit: u32,
     },
+    MalformedDecisionId(String),
+    DuplicateDecisionId {
+        also_in: TreePath,
+    },
+    UnknownRecordStatus(String),
+    RecordNodeNotFound(NodeId),
+    /// The record's `node` isn't the node owning the `decisions/` folder it's in.
+    RecordInWrongFolder {
+        node: NodeId,
+    },
+    SupersededRecordNotFound(DecisionId),
+    AcceptedTopicTwice {
+        topic: Topic,
+        also_in: TreePath,
+    },
+    /// A record's body is estimated at `tokens`, over the fixed `RECORD_TOKENS`.
+    RecordTooLarge {
+        tokens: u32,
+    },
 }
 
 impl Problem {
@@ -80,7 +107,8 @@ impl Problem {
             | Self::NestedTreeSkipped
             | Self::UnknownField(_)
             | Self::NodeFileWithoutId
-            | Self::NodeTooLarge { .. } => Severity::Warning,
+            | Self::NodeTooLarge { .. }
+            | Self::RecordTooLarge { .. } => Severity::Warning,
             Self::UnparsableFrontmatter(_)
             | Self::MissingField(_)
             | Self::EmptyField(_)
@@ -97,7 +125,14 @@ impl Problem {
             | Self::ReplacementNotFound(_)
             | Self::NodeIdOutsideNodeFile(_)
             | Self::BrokenLink(_)
-            | Self::MissingAnchor { .. } => Severity::Error,
+            | Self::MissingAnchor { .. }
+            | Self::MalformedDecisionId(_)
+            | Self::DuplicateDecisionId { .. }
+            | Self::UnknownRecordStatus(_)
+            | Self::RecordNodeNotFound(_)
+            | Self::RecordInWrongFolder { .. }
+            | Self::SupersededRecordNotFound(_)
+            | Self::AcceptedTopicTwice { .. } => Severity::Error,
         }
     }
 }
@@ -112,6 +147,13 @@ impl Field {
             Self::Repos => "repos",
             Self::Work => "work",
             Self::SupersededBy => "superseded_by",
+            Self::Node => "node",
+            Self::Topic => "topic",
+            Self::DecidedBy => "decided_by",
+            Self::Date => "date",
+            Self::Source => "source",
+            Self::AppliesTo => "applies_to",
+            Self::Supersedes => "supersedes",
         }
     }
 
@@ -124,9 +166,14 @@ impl Field {
         match self {
             Self::Repos | Self::Work => "a list",
             Self::Id | Self::Title | Self::Status | Self::Summary | Self::SupersededBy => "text",
+            Self::Source | Self::AppliesTo => "a list",
+            Self::Node | Self::DecidedBy | Self::Supersedes => "text",
+            Self::Topic => "kebab-case text",
+            Self::Date => "a date, YYYY-MM-DD",
         }
     }
 
+    // Node fields only, so `from_name` still treats a node's `topic` as an unknown field.
     const ALL: [Field; 7] = [
         Self::Id,
         Self::Title,
@@ -205,6 +252,38 @@ impl fmt::Display for Problem {
                 "node body is about {} tokens, over `node_tokens` ({}); move detail into child nodes or a linked supporting doc",
                 grouped(*tokens),
                 grouped(*limit)
+            ),
+            Self::MalformedDecisionId(text) => write!(
+                f,
+                "malformed decision ID `{text}`: expected `dc-` and 7 lowercase hex characters"
+            ),
+            Self::DuplicateDecisionId { also_in } => {
+                write!(f, "decision ID is also used by `{also_in}`")
+            }
+            Self::UnknownRecordStatus(status) => write!(
+                f,
+                "status `{status}` isn't a record status: expected `proposed`, `accepted`, `superseded` or `rejected`"
+            ),
+            Self::RecordNodeNotFound(id) => {
+                write!(f, "`node` names `{id}`, which isn't a node in this tree")
+            }
+            Self::RecordInWrongFolder { node } => write!(
+                f,
+                "`node` is `{node}`, but the record's `decisions/` folder isn't that node's"
+            ),
+            Self::SupersededRecordNotFound(id) => write!(
+                f,
+                "`supersedes` names `{id}`, which isn't a decision record in this tree"
+            ),
+            Self::AcceptedTopicTwice { topic, also_in } => write!(
+                f,
+                "another accepted record, `{also_in}`, has topic `{topic}`"
+            ),
+            Self::RecordTooLarge { tokens } => write!(
+                f,
+                "record body is about {} tokens, over {}; a choice that needs more is a spec change or an ADR",
+                grouped(*tokens),
+                grouped(RECORD_TOKENS)
             ),
         }
     }

@@ -21,7 +21,7 @@ fn reports_broken_links_in_nodes_and_supporting_docs_at_their_lines() {
         "[gone](ranking.md)\n[case](../Search/search.md)\n[above](../../../x.md)\n",
     );
     let broken = "---\nid: fd-000003\ntitle: Broken\nstatus: draft\nsummary: \"Broken summary.\"\n---\n\n[x](nowhere.md)\n";
-    let record = "---\nid: dc-0000001\n---\n\n[x](nope.md)\n";
+    let record = "---\nid: dc-0000001\nnode: fd-000002\ntitle: \"Engine\"\nstatus: accepted\ntopic: engine\ndate: 2026-10-28\n---\n\n[x](nope.md)\n";
     let fixture = Fixture::new(
         "links",
         &[

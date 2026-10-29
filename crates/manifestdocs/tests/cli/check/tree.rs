@@ -102,23 +102,3 @@ fn reports_a_node_id_in_a_file_that_isnt_a_node_file() {
     );
     assert_eq!(run.code, 1);
 }
-
-#[test]
-fn skips_decision_records() {
-    let root = node("fd-000001", "Demo");
-    let record = "---\nid: dc-0000001\nnode: fd-000001\ntitle: Unquoted\nowner: sam\n---\n";
-    let fixture = Fixture::new(
-        "records",
-        &[
-            CONFIG,
-            ("demo.md", &root),
-            ("decisions/2026-10-28-search.md", record),
-            ("decisions/notes.md", "---\nid: fd-000009\n---\n"),
-        ],
-    );
-
-    let run = fixture.check("");
-
-    assert_eq!(run.stdout, "1 node: no problems\n");
-    assert_eq!(run.code, 0);
-}

@@ -168,7 +168,13 @@ struct Record {
     body: String,
 }
 enum RecordStatus { Proposed, Accepted, Superseded, Rejected }
-struct ParsedRecord { file: TreePath, id: Option<DecisionId>, record: Option<Record>, findings: Vec<Finding> }
+struct ParsedRecord {
+    file: TreePath,
+    id: Option<DecisionId>,            // set whenever `id` parses, so references to it resolve
+    record: Option<Record>,
+    findings: Vec<Finding>,
+    keys: Vec<Key>,                    // the frontmatter's top-level keys, so findings across records point at a field's line
+}
 
 // Problem gains, all errors except the last:
 //   MalformedDecisionId(String), DuplicateDecisionId { also_in: TreePath },
@@ -179,7 +185,7 @@ struct ParsedRecord { file: TreePath, id: Option<DecisionId>, record: Option<Rec
 // Field gains the record fields; MissingField, EmptyField, UnquotedField and WrongType cover them.
 ```
 
-- A record is any Markdown file in a node's `decisions/` folder. Its file name, `YYYY-MM-DD-topic.md`, is a convention that `check` doesn't enforce, because frontmatter is the source of truth.
+- A record is any Markdown file with frontmatter in a node's `decisions/` folder. A file there with no frontmatter, such as a README, isn't a record and isn't checked. A record's file name, `YYYY-MM-DD-topic.md`, is a convention that `check` doesn't enforce, because frontmatter is the source of truth.
 - Records are read from the same snapshot as nodes, so they come from the working tree or a commit as nodes do.
 
 ## Where the tree is read from (M2)
