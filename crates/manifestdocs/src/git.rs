@@ -275,7 +275,6 @@ impl PathSet {
 /// The latest commit in `head`'s history that changed a file in `paths`, leaving out the
 /// commits in `base`'s history. Without `base`, every commit in `head`'s history counts.
 /// `head` and `base` are commit IDs, as `resolve` gives them.
-#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
 pub fn latest_change(
     clone: &Path,
     base: Option<&str>,
@@ -294,7 +293,6 @@ pub fn latest_change(
 /// The last commit on `head`'s first-parent line, its default branch's own history, made
 /// before `time`, such as an issue's creation time in RFC 3339. `None` when every commit is
 /// later. Merged branches' commits are skipped, since they weren't on the branch at `time`.
-#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
 pub fn commit_before(clone: &Path, head: &str, time: &str) -> Result<Option<Commit>> {
     let before = format!("--before={time}");
     let args = ["rev-list", "-1", "--first-parent", &before, head];
@@ -325,7 +323,6 @@ pub enum Lines {
 
 /// The files in `paths` that differ between `base` and `head`, in path order. Without `base`,
 /// every file in `head` is added. A renamed file is one deleted and one added.
-#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
 pub fn diff_summary(
     clone: &Path,
     base: Option<&str>,
@@ -341,19 +338,15 @@ pub fn diff_summary(
         }
     };
     // `diff-tree` is plumbing, so diff settings in the user's config don't change its output.
-    let mut args = vec![
-        "diff-tree",
-        "-r",
-        "--numstat",
-        "--no-renames",
-        "-z",
-        base,
-        head,
-    ];
-    args.push("--");
+    let mut args = ["diff-tree", "-r", "--numstat", "--no-renames", "-z"].to_vec();
+    args.extend([base, head, "--"]);
     let pathspecs = paths.pathspecs();
     args.extend(pathspecs.iter().map(String::as_str));
-    let listing = run_bytes(clone, &args)?;
+    file_changes(&run_bytes(clone, &args)?)
+}
+
+/// `diff-tree --numstat -z` output, one entry per file.
+fn file_changes(listing: &[u8]) -> Result<Vec<FileChange>> {
     let entries = listing.split(|byte| *byte == 0).filter(|e| !e.is_empty());
     // A path that isn't UTF-8 can't be a node's file, so it's skipped.
     let entries = entries.filter_map(|entry| std::str::from_utf8(entry).ok());

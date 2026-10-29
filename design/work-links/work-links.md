@@ -24,6 +24,8 @@ Manifest Docs reads GitHub's sub-issues, at any depth. In a repo without them, e
 
 `mfd stale` compares each open linked issue's `spec-ref`, or its creation-time commit, with the latest commit that touched any file its node owns (see [ownership](../tree-format/tree-format.md#ownership)), images included. For each stale issue it prints the issue, the node and a diff summary of what changed. It only reports. A person or an agent decides whether to comment on the issue.
 
+A node's linked issues are its work items, their sub-issues unless a deeper node lists them, and the issues whose `feature:` line names it, with their sub-issues. `stale` reads the docs version `work` reads and compares commits up to it, so uncommitted edits don't count. An issue `gh` can't read, or whose `spec-ref` isn't a commit in the docs clone, is listed as not checked.
+
 ## Writing to GitHub
 
 The binary never writes to GitHub. Agents create issues, comments and pull requests with `gh`, guided by the plugin's skills. The harness's permission rules see each write, and a team can allow every `mfd` command without a prompt.
