@@ -18,7 +18,7 @@ Rust, split into a library crate and a thin binary crate.
 | Markdown structure | `pulldown-cmark` |
 | Git history and SHAs | `git` subprocess first, `gix` later |
 | GitHub work tree | Read-only `gh api graphql` subprocess, batched per command |
-| IDs | The operating system's random source, through `getrandom` |
+| IDs | The operating system's random source, read from `/dev/urandom` on the macOS and Linux release targets |
 | Token estimates | Characters divided by three, with 10% headroom; an exact tokenizer later behind a flag if needed |
 | Errors | `thiserror` in core, `anyhow` in the binary |
 

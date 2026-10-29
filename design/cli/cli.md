@@ -26,7 +26,7 @@ Commands that need GitHub fail with a clear message when `gh` is missing or unau
 
 The read commands, `tree`, `show`, `context`, `check`, `decisions` and `work`, take `--ref <ref>` to read a branch, tag or commit in the docs clone instead of the [version they read by default](../tree-format/tree-format.md#which-version-the-tool-reads): the working tree for `tree`, `show` and `check`, and from another repo `origin/HEAD` for `context`, `decisions` and `work`. `--ref` is an error for a tree outside git. A path argument names a file or folder in the version read, so a path that exists only in that commit works, and one that exists only on disk isn't found. `context --out <path>` writes the context to that file instead of stdout, creating its folders, and prints `Wrote <path>` to stderr.
 
-Paths on the command line and in output are relative to the current folder, so a path one command prints works as another's argument. `check` exits 1 when the tree has errors, or any findings with `--strict`, `show` exits 1 when the node's frontmatter has errors, which it prints, and `work` exits 1 when it can't read an issue on GitHub, which it marks. Every command exits 2 when it can't run, such as when there's no tree or an argument names no single node.
+Paths on the command line and in output are relative to the current folder, so a path one command prints works as another's argument. `check` exits 1 when the tree has errors, or any findings with `--strict`, `show` and `context` exit 1 when the node's frontmatter has errors, which they print, and `work` exits 1 when it can't read an issue on GitHub, which it marks. Every command exits 2 when it can't run, such as when there's no tree or an argument names no single node.
 
 ## Output
 
