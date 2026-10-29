@@ -3,6 +3,7 @@
 mod check;
 mod context;
 mod init;
+mod mfd;
 mod plugin;
 mod pointer;
 mod show;

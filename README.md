@@ -10,6 +10,8 @@ Build from a clone of this repo, with Rust installed:
 cargo install --path crates/manifestdocs
 ```
 
+This installs two binaries, `manifestdocs` and its short name `mfd`, which behave the same.
+
 ## Start a tree
 
 In the docs repo, `init` writes `manifestdocs.yaml` and a root node named after the title:
