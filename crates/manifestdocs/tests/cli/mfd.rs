@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::support::{Fixture, Run, node, run_in};
+use crate::support::{Fixture, Run, node, path_without_gh, run_in};
 
 /// Runs `mfd` with `args` in `folder`, with the same environment as `support::run_in`.
 fn run_mfd(folder: &Path, home: &Path, args: &[&str]) -> Run {
@@ -14,6 +14,7 @@ fn run_mfd(folder: &Path, home: &Path, args: &[&str]) -> Run {
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CEILING_DIRECTORIES", ceiling)
+        .env("PATH", path_without_gh())
         .output()
         .expect("the binary runs");
     Run {

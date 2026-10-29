@@ -1,6 +1,7 @@
 mod check;
 mod context;
 mod files;
+mod gh;
 mod git;
 mod init;
 mod json;

@@ -17,4 +17,5 @@ pub mod refs;
 pub mod slug;
 pub mod tokens;
 pub mod tree;
+pub mod work;
 mod yaml;

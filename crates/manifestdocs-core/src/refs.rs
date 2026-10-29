@@ -32,10 +32,18 @@ impl Host {
 impl RepoRef {
     pub fn parse(text: &str) -> Option<Self> {
         let (owner, name) = text.split_once('/')?;
-        (is_label(owner) && is_repo_name(name)).then(|| Self {
+        (is_owner(owner) && is_repo_name(name)).then(|| Self {
             owner: owner.to_owned(),
             name: name.to_owned(),
         })
+    }
+
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -48,14 +56,37 @@ impl IssueRef {
             return None;
         }
         let number = number.parse::<u64>().ok()?;
+        if number > MAX_ISSUE_NUMBER {
+            return None;
+        }
         Some(Self {
             repo: RepoRef::parse(repo)?,
             number,
         })
     }
+
+    pub fn repo(&self) -> &RepoRef {
+        &self.repo
+    }
+
+    pub fn number(&self) -> u64 {
+        self.number
+    }
 }
 
-// Owners and host labels are letters, digits and hyphens, with no hyphen at either end.
+/// GitHub's GraphQL API takes an issue number as a 32-bit signed `Int`.
+const MAX_ISSUE_NUMBER: u64 = i32::MAX as u64;
+
+// An Enterprise Managed User's handle ends in `_` and the enterprise's shortcode, so an
+// owner can also have underscores.
+fn is_owner(text: &str) -> bool {
+    let allowed = text
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    allowed && !text.is_empty() && !text.starts_with('-') && !text.ends_with('-')
+}
+
+// Host labels are letters, digits and hyphens, with no hyphen at either end.
 fn is_label(text: &str) -> bool {
     let allowed = text
         .bytes()
@@ -94,7 +125,12 @@ mod tests {
 
     #[test]
     fn parses_repos_as_owner_and_name() {
-        for text in ["acme/cookbook-docs", "example-org/cookbook.docs", "a/b_c"] {
+        for text in [
+            "acme/cookbook-docs",
+            "example-org/cookbook.docs",
+            "a/b_c",
+            "alice_acme/notes",
+        ] {
             assert_eq!(
                 RepoRef::parse(text).map(|r| r.to_string()),
                 Some(text.into()),
@@ -120,12 +156,14 @@ mod tests {
             IssueRef::parse("example-org/cookbook-docs#41").map(|i| i.to_string()),
             Some("example-org/cookbook-docs#41".into())
         );
+        assert!(IssueRef::parse("acme/docs#2147483647").is_some());
         for text in [
             "example-org/cookbook-docs",
             "example-org/cookbook-docs#",
             "example-org/cookbook-docs#0",
             "example-org/cookbook-docs#+4",
             "example-org/cookbook-docs#007",
+            "example-org/cookbook-docs#2147483648",
             "#41",
         ] {
             assert_eq!(IssueRef::parse(text), None, "{text}");

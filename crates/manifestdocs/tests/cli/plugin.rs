@@ -7,7 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::support::{Fixture, Run, node};
+use crate::support::{Fixture, Run, blocked_gh, node};
 
 fn script(name: &str) -> PathBuf {
     let scripts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/manifestdocs/scripts");
@@ -15,14 +15,16 @@ fn script(name: &str) -> PathBuf {
 }
 
 /// Runs a hook script from `/`, for the project in `project`. Without `binary`,
-/// `manifestdocs` isn't on the PATH.
+/// `manifestdocs` isn't on the PATH. A `gh` that always fails comes first, since a runner
+/// can have `/usr/bin/gh`.
 fn hook(name: &str, input: &str, project: &Path, binary: bool) -> Run {
     let binary_folder = Path::new(env!("CARGO_BIN_EXE_manifestdocs"))
         .parent()
         .unwrap();
+    let no_gh = blocked_gh().display();
     let path = match binary {
-        true => format!("{}:/usr/bin:/bin", binary_folder.display()),
-        false => "/usr/bin:/bin".to_owned(),
+        true => format!("{no_gh}:{}:/usr/bin:/bin", binary_folder.display()),
+        false => format!("{no_gh}:/usr/bin:/bin"),
     };
     let mut child = Command::new("/bin/sh")
         .arg(script(name))

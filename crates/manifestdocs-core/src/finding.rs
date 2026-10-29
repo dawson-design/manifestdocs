@@ -5,6 +5,7 @@ use std::fmt;
 use crate::id::NodeId;
 use crate::paths::TreePath;
 use crate::record::{DecisionId, RECORD_TOKENS, Topic};
+use crate::refs::IssueRef;
 use crate::tokens::grouped;
 
 /// One problem in one file. `file` can name a folder, such as a skipped nested tree.
@@ -98,6 +99,19 @@ pub enum Problem {
     RecordTooLarge {
         tokens: u32,
     },
+    /// An issue in a node's `work` that `gh` can't read: it doesn't exist, or its repo
+    /// doesn't or can't be read.
+    IssueNotFound(IssueRef),
+    /// An issue whose `feature:` line names a node ID that isn't in the tree.
+    IssueNamesUnknownNode {
+        issue: IssueRef,
+        id: NodeId,
+    },
+    /// An issue whose `feature:` line isn't followed by a node ID.
+    MalformedFeatureLine {
+        issue: IssueRef,
+        value: String,
+    },
 }
 
 impl Problem {
@@ -108,7 +122,9 @@ impl Problem {
             | Self::UnknownField(_)
             | Self::NodeFileWithoutId
             | Self::NodeTooLarge { .. }
-            | Self::RecordTooLarge { .. } => Severity::Warning,
+            | Self::RecordTooLarge { .. }
+            | Self::IssueNamesUnknownNode { .. }
+            | Self::MalformedFeatureLine { .. } => Severity::Warning,
             Self::UnparsableFrontmatter(_)
             | Self::MissingField(_)
             | Self::EmptyField(_)
@@ -132,7 +148,8 @@ impl Problem {
             | Self::RecordNodeNotFound(_)
             | Self::RecordInWrongFolder { .. }
             | Self::SupersededRecordNotFound(_)
-            | Self::AcceptedTopicTwice { .. } => Severity::Error,
+            | Self::AcceptedTopicTwice { .. }
+            | Self::IssueNotFound(_) => Severity::Error,
         }
     }
 
@@ -169,6 +186,9 @@ impl Problem {
             Self::SupersededRecordNotFound(_) => "superseded_record_not_found",
             Self::AcceptedTopicTwice { .. } => "accepted_topic_twice",
             Self::RecordTooLarge { .. } => "record_too_large",
+            Self::IssueNotFound(_) => "issue_not_found",
+            Self::IssueNamesUnknownNode { .. } => "issue_names_unknown_node",
+            Self::MalformedFeatureLine { .. } => "malformed_feature_line",
         }
     }
 }
@@ -321,6 +341,18 @@ impl fmt::Display for Problem {
                 grouped(*tokens),
                 grouped(RECORD_TOKENS)
             ),
+            Self::IssueNotFound(issue) => write!(
+                f,
+                "`work` names `{issue}`, which isn't an issue you can read on GitHub"
+            ),
+            Self::IssueNamesUnknownNode { issue, id } => write!(
+                f,
+                "issue `{issue}` has `feature: {id}`, which isn't a node in this tree"
+            ),
+            Self::MalformedFeatureLine { issue, value } => write!(
+                f,
+                "issue `{issue}` has a malformed `feature:` line `{value}`: expected `fd-` and 6 lowercase hex characters"
+            ),
         }
     }
 }
@@ -336,6 +368,7 @@ mod tests {
         let path = || TreePath::new("a.md").expect("a valid path");
         let text = || String::from("x");
         let decision = || DecisionId::parse("dc-0000001").expect("a valid decision ID");
+        let issue = || IssueRef::parse("acme/docs#1").expect("a valid issue reference");
         let problems = [
             Problem::UnparsableFrontmatter(text()),
             Problem::MissingField(Field::Id),
@@ -379,6 +412,15 @@ mod tests {
                 also_in: path(),
             },
             Problem::RecordTooLarge { tokens: 301 },
+            Problem::IssueNotFound(issue()),
+            Problem::IssueNamesUnknownNode {
+                issue: issue(),
+                id: id(),
+            },
+            Problem::MalformedFeatureLine {
+                issue: issue(),
+                value: text(),
+            },
         ];
 
         let codes: Vec<&str> = problems.iter().map(Problem::code).collect();
@@ -416,6 +458,9 @@ mod tests {
                 "superseded_record_not_found",
                 "accepted_topic_twice",
                 "record_too_large",
+                "issue_not_found",
+                "issue_names_unknown_node",
+                "malformed_feature_line",
             ]
         );
     }
