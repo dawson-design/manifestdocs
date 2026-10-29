@@ -83,12 +83,7 @@ pub fn open(
     let default_branch = by_default == ByDefault::DefaultBranch && roots.from_another_repo;
     let reference = match reference {
         Some(reference) => reference.to_owned(),
-        None if default_branch => git::origin_head(&clone).ok_or_else(|| {
-            anyhow!(
-                "the docs clone's `origin/HEAD` isn't set, so its default branch is unknown; \
-                 set it with `git -C {shown} remote set-head origin --auto`"
-            )
-        })?,
+        None if default_branch => default_branch_of(&clone, &shown)?,
         None => {
             let tracked = git::tracked(&clone).into_iter();
             let tracked = tracked.filter_map(|path| RepoPath::new(&path)).collect();
@@ -96,6 +91,17 @@ pub fn open(
         }
     };
     at_commit(roots, reference, &shown)
+}
+
+/// The branch `origin/HEAD` names in `clone`, such as `origin/main`, which `shown` names for
+/// the hint when it isn't set.
+pub fn default_branch_of(clone: &Path, shown: &str) -> Result<String> {
+    git::origin_head(clone).ok_or_else(|| {
+        anyhow!(
+            "the docs clone's `origin/HEAD` isn't set, so its default branch is unknown; \
+             set it with `git -C {shown} remote set-head origin --auto`"
+        )
+    })
 }
 
 /// Whether the clone is in git. A folder with no `.git` isn't, and doesn't need git to run.

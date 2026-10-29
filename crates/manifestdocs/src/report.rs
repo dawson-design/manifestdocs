@@ -86,7 +86,7 @@ fn summary(report: &Report) -> String {
     format!("{}: {problems}", plural(report.nodes, "node"))
 }
 
-fn plural(n: usize, word: &str) -> String {
+pub fn plural(n: usize, word: &str) -> String {
     if n == 1 {
         format!("1 {word}")
     } else {
