@@ -315,6 +315,8 @@ fn prints_the_errors_of_a_broken_node_or_stops_on_a_bad_argument() {
 fn reads_a_decision_id_as_a_path() {
     let fixture = cookbook("context-decision-id", ENGINE);
     fs::create_dir_all(fixture.path("docs/dc-0000002")).unwrap();
+    // A folder with no files isn't listed, as in git.
+    fs::write(fixture.path("docs/dc-0000002/notes.txt"), "notes\n").unwrap();
     let cases = [
         ("dc-0000001", "error: no file or folder `dc-0000001`\n"),
         ("dc-00", "error: no file or folder `dc-00`\n"),

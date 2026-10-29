@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow};
+use manifestdocs_core::check::Snapshot;
 use manifestdocs_core::finding::Finding;
 use manifestdocs_core::id::{NodeId, NodeIdPrefix};
 use manifestdocs_core::node::{Node, NodeStatus};
@@ -14,21 +15,22 @@ use manifestdocs_core::tree::{Entry, NodeSelector, SelectError, Tree};
 
 mod record;
 
-use crate::files;
+use crate::files::{self, ByDefault};
 use crate::json;
 use crate::locate::locate;
 use crate::report::{finding_line, relative, write_stdout};
 use crate::tree::path_in_tree;
 
-pub fn run(arg: &str, json: bool) -> Result<ExitCode> {
+pub fn run(arg: &str, json: bool, reference: Option<&str>) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
-    let roots = locate(&cwd)?;
-    let (tree, mut snapshot) = files::tree_and_snapshot(&roots, &cwd)?;
+    let docs = files::open(locate(&cwd)?, reference, ByDefault::WorkingTree, &cwd)?;
+    let roots = &docs.roots;
+    let (tree, mut snapshot) = files::tree_and_snapshot(&docs, &cwd)?;
     let paths = Paths {
         tree_root: &roots.tree_root,
         cwd: &cwd,
     };
-    let selector = show_selector(&tree, arg, &paths)?;
+    let selector = show_selector(&tree, &snapshot, arg, &paths)?;
     if let NodeSelector::Decision(prefix) = &selector {
         // A record's JSON shape isn't settled yet, so `--json` refuses rather than printing text.
         if json {
@@ -36,7 +38,7 @@ pub fn run(arg: &str, json: bool) -> Result<ExitCode> {
                 "`show --json` doesn't support decision records yet"
             ));
         }
-        files::read_records(&mut snapshot, &roots, &tree.config, &cwd)?;
+        files::read_records(&mut snapshot, &docs, &tree.config, &cwd)?;
         let records = read_records(&tree.config, &snapshot);
         return record::run(&tree, &records, arg, prefix, &paths);
     }
@@ -77,17 +79,27 @@ impl Paths<'_> {
 }
 
 /// The node `arg` names, or an error that says why it names no single node.
-pub fn select_node<'a>(tree: &'a Tree, arg: &str, paths: &Paths) -> Result<&'a Entry> {
-    let selector = selector(tree, arg, paths.cwd, paths.tree_root)?;
+pub fn select_node<'a>(
+    tree: &'a Tree,
+    snapshot: &Snapshot,
+    arg: &str,
+    paths: &Paths,
+) -> Result<&'a Entry> {
+    let selector = selector(tree, snapshot, arg, paths)?;
     tree.select(&selector)
         .map_err(|error| select_error(arg, error, paths))
 }
 
 // For `show` only, an argument that starts with `dc-` is always a decision ID, so a folder
 // with that name is `./dc-x`. Other commands read it as a path.
-fn show_selector(tree: &Tree, arg: &str, paths: &Paths) -> Result<NodeSelector> {
+fn show_selector(
+    tree: &Tree,
+    snapshot: &Snapshot,
+    arg: &str,
+    paths: &Paths,
+) -> Result<NodeSelector> {
     if !arg.starts_with("dc-") {
-        return selector(tree, arg, paths.cwd, paths.tree_root);
+        return selector(tree, snapshot, arg, paths);
     }
     let prefix = DecisionIdPrefix::parse(arg).ok_or_else(|| {
         anyhow!("`{arg}` isn't a decision ID: expected `dc-` and 4 to 7 lowercase hex characters")
@@ -96,14 +108,15 @@ fn show_selector(tree: &Tree, arg: &str, paths: &Paths) -> Result<NodeSelector> 
 }
 
 // An argument that starts with `fd-` is always an ID, so a folder with that name is `./fd-x`.
-fn selector(tree: &Tree, arg: &str, cwd: &Path, tree_root: &Path) -> Result<NodeSelector> {
+fn selector(tree: &Tree, snapshot: &Snapshot, arg: &str, paths: &Paths) -> Result<NodeSelector> {
     if arg.starts_with("fd-") {
         let prefix = NodeIdPrefix::parse(arg).ok_or_else(|| {
             anyhow!("`{arg}` isn't a node ID: expected `fd-` and 4 to 6 lowercase hex characters")
         })?;
         return Ok(NodeSelector::Id(prefix));
     }
-    Ok(NodeSelector::Path(path_in_tree(tree, arg, cwd, tree_root)?))
+    let path = path_in_tree(tree, snapshot, arg, paths.cwd, paths.tree_root)?;
+    Ok(NodeSelector::Path(path))
 }
 
 fn select_error(arg: &str, error: SelectError, paths: &Paths) -> anyhow::Error {

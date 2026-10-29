@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::docs_source::{git, workspace};
 use crate::support::{Fixture, Run, blocked_gh, node};
 
 fn script(name: &str) -> PathBuf {
@@ -237,4 +238,28 @@ fn after_an_edit_reports_a_config_that_stops_the_check() {
         );
         assert_eq!(run.code, 2);
     }
+}
+
+/// `tree` reads the docs clone's working tree through a pointer, so the outline doesn't
+/// depend on `origin/HEAD`.
+#[test]
+fn at_session_start_outlines_the_docs_clones_working_tree_through_a_pointer() {
+    let (fixture, _, _) = workspace("plugin-session-working-tree");
+    git(
+        &fixture,
+        "work/docs",
+        &["remote", "set-head", "origin", "-d"],
+    );
+
+    let run = hook("session-start.sh", "{}", &fixture.path("work/web"), true);
+
+    assert!(
+        run.stdout.ends_with(
+            "Cookbook (fd-0a0001, draft)  ../docs/cookbook.md\n  \
+             Search, edited (fd-7c2e41, draft)  ../docs/search/search.md\n"
+        ),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(run.code, 0);
 }

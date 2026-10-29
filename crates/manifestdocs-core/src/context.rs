@@ -27,6 +27,15 @@ pub enum DocsVersion {
         /// The branch `origin/HEAD` names, when it's set.
         default_branch: Option<String>,
     },
+    /// A commit in the docs clone: `origin/HEAD`, or the ref the command was given.
+    Commit {
+        /// The ref as read, such as `origin/main`.
+        reference: String,
+        /// The commit's short SHA.
+        commit: String,
+        /// The commit's date, as `YYYY-MM-DD`.
+        date: String,
+    },
 }
 
 /// An approximate token budget for the whole context, at least 1.
@@ -308,6 +317,17 @@ fn render(head: &str, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -
 }
 
 fn header(entry: &Entry, version: &DocsVersion) -> String {
+    if let DocsVersion::Commit {
+        reference,
+        commit,
+        date,
+    } = version
+    {
+        return format!(
+            "# Context: {} (docs {reference} @ {commit}, {date})\n",
+            entry.id
+        );
+    }
     let DocsVersion::WorkingTree {
         branch,
         commit,

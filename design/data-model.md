@@ -145,7 +145,7 @@ The types can't express these, so `check` does.
 - A command-line argument that starts with `fd-` is an ID or ID prefix. A folder with that name is written `./fd-x`.
 - A node's supporting docs are files of any type. `manifestdocs.yaml` and decision records aren't supporting docs.
 - Link paths are repo paths, not tree paths, because a link can leave the tree, such as a link to an ADR folder next to it.
-- The snapshot lists what GitHub shows: dotfiles are in, files the repo's `.gitignore` files exclude are out, and nested repos and submodules are skipped. A tracked file that matches `.gitignore` is missed until M2 reads git's index.
+- The snapshot lists what GitHub shows: dotfiles are in, files the repo's `.gitignore` files exclude are out, and nested repos and submodules are skipped. A docs tree in a submodule is read as another repo. A tracked file that matches `.gitignore` is in, because the working tree's list adds the files in git's index, and a commit's list is every file in it.
 
 ## Decision records (M2)
 
@@ -198,9 +198,10 @@ enum DocsSource {
 // DocsVersion gains Commit { reference, commit, date } for the context header.
 ```
 
-- Walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so the source is the working tree. Reaching the tree through a pointer from another repo means the source is the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides both, resolved in the docs clone.
+- `check`, `tree` and `show` are authoring tools, so they read the docs clone's working tree wherever they run. `context` and `decisions` feed agents: walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so they read the working tree, and reaching the tree through a pointer from another repo means they read the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides the default, resolved in the docs clone.
 - An unset `origin/HEAD` is an error that prints `git -C <docs clone> remote set-head origin --auto`. A tree outside git always reads the working tree, and `--ref` there is an error.
 - A commit's snapshot lists paths with `git ls-tree -r -z` and reads Markdown with one `git cat-file --batch`, so the core still gets a `Snapshot` and stays free of I/O.
+- Every git command runs with `GIT_NO_LAZY_FETCH=1`, so a partial clone missing an object fails with a message that names the commit. A `.git` that git can't run on, such as when `git` isn't installed or `safe.directory` refuses the clone, is an error, not a tree outside git.
 
 ## GitHub (M3)
 

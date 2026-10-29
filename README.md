@@ -115,7 +115,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 |---|---|
 | `init [title]` | Starts a tree in the current folder |
 | `tree [path] [--depth n] [--json]` | Outlines the nodes, from the root or from a node or folder |
-| `context <id or path> [--budget n]` | Prints a node's context for an agent |
+| `context <id or path> [--budget n] [--out path]` | Prints a node's context for an agent, or writes it to a file |
 | `show <id or path> [--json]` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
 | `check [path] [--json] [--offline]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder. With a `github` block, it also checks linked issues through `gh`, unless `--offline` |
 
@@ -138,6 +138,8 @@ In a workspace folder that holds the code repos and a docs repo, put one beside 
 # ~/work/cookbook/.manifestdocs/config.yaml
 tree: cookbook-docs
 ```
+
+`check`, `tree` and `show` read the docs clone's working tree, so you see your own edits. From another repo, `context` reads the docs clone's default branch, `origin/HEAD`, so a clone left on a feature branch doesn't change what an agent reads. It never fetches, so it reads the clone as of its last `git fetch`, and when `origin/HEAD` isn't set, it prints the `git remote set-head` command that sets it. `tree`, `show`, `context` and `check` take `--ref <ref>` to read another branch, tag or commit.
 
 ## Develop
 

@@ -2,6 +2,7 @@
 
 mod check;
 mod context;
+mod docs_source;
 mod init;
 mod json;
 mod mfd;

@@ -13,7 +13,7 @@ summary: "The commands, and their text and JSON output."
 |---|---|---|
 | `mfd tree [path] [--depth n]` | Outline of nodes with status | No |
 | `mfd show <id or path>` | One node in full, with supporting docs listed. From M2, a `dc-` ID shows one decision record in full, with the chain of records it supersedes | No |
-| `mfd context <id or path>` | Node and its ancestors in full, linked docs, child summaries | No |
+| `mfd context <id or path> [--out path]` | Node and its ancestors in full, linked docs, child summaries | No |
 | `mfd context <issue-ref>` | Issue, summaries of its parent chain, linked node context | Yes |
 | `mfd check [path] [--strict] [--offline]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md). `--offline` skips the GitHub rules without calling `gh` | No |
 | `mfd work <id>` | Work items linked to a node and their sub-issues, with open or closed state | Yes |
@@ -23,6 +23,8 @@ summary: "The commands, and their text and JSON output."
 | `mfd init [title]` | Create `manifestdocs.yaml` and a root node, named after the title in kebab case | No |
 
 Commands that need GitHub fail with a clear message when `gh` is missing or unauthenticated. All other commands still work.
+
+The read commands, `tree`, `show`, `context`, `check` and `decisions`, take `--ref <ref>` to read a branch, tag or commit in the docs clone instead of the [version they read by default](../tree-format/tree-format.md#which-version-the-tool-reads): the working tree for `tree`, `show` and `check`, and from another repo `origin/HEAD` for `context` and `decisions`. `--ref` is an error for a tree outside git. A path argument names a file or folder in the version read, so a path that exists only in that commit works, and one that exists only on disk isn't found. `context --out <path>` writes the context to that file instead of stdout, creating its folders, and prints `Wrote <path>` to stderr.
 
 Paths on the command line and in output are relative to the current folder, so a path one command prints works as another's argument. `check` exits 1 when the tree has errors, or any findings with `--strict`, and `show` exits 1 when the node's frontmatter has errors, which it prints. Every command exits 2 when it can't run, such as when there's no tree or an argument names no single node.
 
