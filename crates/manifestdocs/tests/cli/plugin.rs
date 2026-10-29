@@ -26,6 +26,23 @@ fn hook(name: &str, input: &str, project: &Path, binary: bool) -> Run {
         true => format!("{no_gh}:{}:/usr/bin:/bin", binary_folder.display()),
         false => format!("{no_gh}:/usr/bin:/bin"),
     };
+    run_hook(name, input, project, &path)
+}
+
+/// Runs a hook script as `hook` does, with `manifestdocs` on the PATH after `gh_folder`.
+fn hook_with_gh(name: &str, input: &str, project: &Path, gh_folder: &Path) -> Run {
+    let binary_folder = Path::new(env!("CARGO_BIN_EXE_manifestdocs"))
+        .parent()
+        .unwrap();
+    let path = format!(
+        "{}:{}:/usr/bin:/bin",
+        gh_folder.display(),
+        binary_folder.display()
+    );
+    run_hook(name, input, project, &path)
+}
+
+fn run_hook(name: &str, input: &str, project: &Path, path: &str) -> Run {
     let mut child = Command::new("/bin/sh")
         .arg(script(name))
         .current_dir("/")
@@ -100,6 +117,30 @@ fn after_an_edit_shows_claude_the_errors_in_the_tree() {
         );
         assert_eq!(run.code, 2);
     }
+}
+
+#[test]
+fn after_an_edit_checks_the_tree_without_calling_github() {
+    let fixture = repo("plugin-edit-offline", "\"Cookbook\"");
+    let config = "name: cookbook\ngithub:\n  host: github.com\n  docs_repo: acme/cookbook-docs\n";
+    fs::write(fixture.path("docs/manifestdocs.yaml"), config).unwrap();
+    let search = "---\nid: fd-000002\ntitle: \"Search\"\nstatus: draft\nsummary: \"Search summary.\"\nwork: [acme/cookbook-docs#99]\n---\n";
+    let file = fixture.path("docs/search/search.md");
+    fs::write(&file, search).unwrap();
+    // A plain `check` would ask about #99, find it missing and report an error.
+    fixture.gh_no_issue("github.com", "acme/cookbook-docs#99");
+    fixture.gh_search("github.com", "acme/cookbook-docs", &[]);
+
+    let run = hook_with_gh(
+        "after-edit.sh",
+        &edit_input(&file),
+        &fixture.path(""),
+        &fixture.gh_folder(),
+    );
+
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.gh_calls(), Vec::<String>::new());
 }
 
 #[test]

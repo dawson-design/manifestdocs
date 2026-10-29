@@ -358,3 +358,38 @@ fn prints_github_findings_as_json() {
     assert_eq!(run.stderr, "");
     assert_eq!(run.code, 1);
 }
+
+/// A tree whose plain `check` would ask `gh` about a missing issue and report it.
+fn offline_tree(name: &str) -> Fixture {
+    let fixture = tree(name, GITHUB, "acme/cookbook-docs#99");
+    fixture.gh_no_issue("github.com", "acme/cookbook-docs#99");
+    fixture
+}
+
+#[test]
+fn offline_skips_the_github_rules_without_calling_gh() {
+    let fixture = offline_tree("gh-offline");
+
+    let run = fixture.run_with_gh("", &["check", "--offline", "--strict"]);
+
+    assert_eq!(run.stdout, "2 nodes: no problems\n");
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.gh_calls(), Vec::<String>::new());
+}
+
+#[test]
+fn offline_json_skips_the_github_rules_without_calling_gh() {
+    let fixture = offline_tree("gh-offline-json");
+
+    let run = fixture.run_with_gh("", &["check", "--offline", "--json"]);
+
+    let output: Value = serde_json::from_str(&run.stdout).expect("stdout is one JSON object");
+    assert_eq!(
+        output,
+        json!({ "schema": 1, "command": "check", "data": { "nodes": 2, "findings": [] } })
+    );
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.gh_calls(), Vec::<String>::new());
+}

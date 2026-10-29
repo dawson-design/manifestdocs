@@ -15,7 +15,7 @@ esac
 # From the project folder, so the report's paths read from where Claude works.
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
-report=$(manifestdocs check "$file" 2>&1)
+report=$(manifestdocs check --offline "$file" 2>&1)
 case $? in
   0) exit 0 ;;
   1) ;;

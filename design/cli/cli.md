@@ -15,7 +15,7 @@ summary: "The commands, and their text and JSON output."
 | `mfd show <id or path>` | One node in full, with supporting docs listed. From M2, a `dc-` ID shows one decision record in full, with the chain of records it supersedes | No |
 | `mfd context <id or path>` | Node and its ancestors in full, linked docs, child summaries | No |
 | `mfd context <issue-ref>` | Issue, summaries of its parent chain, linked node context | Yes |
-| `mfd check [path] [--strict]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md) | No |
+| `mfd check [path] [--strict] [--offline]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md). `--offline` skips the GitHub rules without calling `gh` | No |
 | `mfd work <id>` | Work items linked to a node and their sub-issues, with open or closed state | Yes |
 | `mfd stale` | Report open issues whose node changed after their `spec-ref` | Yes |
 | `mfd decide` | Write a decision record from a file or stdin; see [decision records](../decision-records/decision-records.md) | No |

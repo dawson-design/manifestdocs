@@ -34,6 +34,9 @@ enum Command {
         /// Print JSON, in schema version 1, instead of text
         #[arg(long)]
         json: bool,
+        /// Skip the GitHub rules without calling `gh`
+        #[arg(long)]
+        offline: bool,
     },
     /// Print an outline of the nodes, with their IDs, statuses and files
     Tree {
@@ -97,7 +100,18 @@ fn main() -> ExitCode {
     };
     let json = cli.command.json();
     let result = match cli.command {
-        Command::Check { path, strict, json } => check::run(path.as_deref(), strict, json),
+        Command::Check {
+            path,
+            strict,
+            json,
+            offline,
+        } => {
+            let github = match offline {
+                true => check::GitHub::Skip,
+                false => check::GitHub::Check,
+            };
+            check::run(path.as_deref(), strict, json, github)
+        }
         Command::Tree { path, depth, json } => tree::run(path.as_deref(), depth, json),
         Command::Show { node, json } => show::run(&node, json),
         Command::Context {

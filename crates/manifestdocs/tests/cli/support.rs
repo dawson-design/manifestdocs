@@ -139,6 +139,12 @@ impl Fixture {
         self.write_gh("unauthorized", "");
     }
 
+    /// Writes the fixture's fake `gh` and returns its folder, for a test that builds its own
+    /// `PATH`.
+    pub fn gh_folder(&self) -> PathBuf {
+        write_fake_gh(&self.fake_gh())
+    }
+
     /// The arguments of each call the fake `gh` received, one line per call.
     pub fn gh_calls(&self) -> Vec<String> {
         let log = fs::read_to_string(self.fake_gh().join("calls.log")).unwrap_or_default();
@@ -169,9 +175,14 @@ pub fn run_in(folder: &Path, home: &Path, args: &[&str]) -> Run {
 /// fake answers read-only `gh api graphql` requests from the files the `Fixture::gh_*`
 /// helpers write, and fails any request it has no file for, so a test can't reach GitHub.
 pub fn run_in_with_gh(folder: &Path, home: &Path, args: &[&str], fake_gh: &Path) -> Run {
+    run_with_path(folder, home, args, path_with(&write_fake_gh(fake_gh)))
+}
+
+/// Writes the fake `gh` into `fake_gh/bin` and returns that folder.
+fn write_fake_gh(fake_gh: &Path) -> PathBuf {
     let bin = fake_gh.join("bin");
     write_script(&bin.join("gh"), &fake_gh_script(fake_gh));
-    run_with_path(folder, home, args, path_with(&bin))
+    bin
 }
 
 fn run_with_path(folder: &Path, home: &Path, args: &[&str], path: OsString) -> Run {

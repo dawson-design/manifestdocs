@@ -19,8 +19,15 @@ use crate::json;
 use crate::locate::locate;
 use crate::report::{relative, render, write_stdout};
 
+/// Whether `check` runs its GitHub rules.
+pub enum GitHub {
+    Check,
+    /// `--offline`: skip them without calling `gh`, and without a note, since it was asked for.
+    Skip,
+}
+
 /// With `strict`, warnings fail the check as errors do.
-pub fn run(path: Option<&str>, strict: bool, json: bool) -> Result<ExitCode> {
+pub fn run(path: Option<&str>, strict: bool, json: bool, github: GitHub) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let start = match path {
         Some(path) => start_folder(path, &cwd)?,
@@ -39,7 +46,11 @@ pub fn run(path: Option<&str>, strict: bool, json: bool) -> Result<ExitCode> {
     let config = files::read_config(&roots.tree_root, &cwd)?;
     let mut snapshot = files::snapshot(&roots, &config, &cwd)?;
     files::read_anchor_targets(&mut snapshot, &roots, &config, &cwd)?;
-    let report = with_github_rules(check(&config, &snapshot), &config, &snapshot);
+    let report = check(&config, &snapshot);
+    let report = match github {
+        GitHub::Check => with_github_rules(report, &config, &snapshot),
+        GitHub::Skip => report,
+    };
     match json {
         true => json::check(&report, &roots.tree_root, &cwd)?,
         false => write_stdout(&render(&report, &roots.tree_root, &cwd))?,
