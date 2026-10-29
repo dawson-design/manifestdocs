@@ -9,7 +9,7 @@ summary: "How a docs repo marks a tree, its nodes, the files each node owns, and
 
 ## Root marker
 
-A `manifestdocs.yaml` file marks the root of a tree. It can go in any folder of a docs repo, and one repo can contain several trees. A `manifestdocs.yaml` inside an existing tree starts a separate tree, and the outer tree skips that folder. The tool locates the root by walking up from the current directory to the repo root, then through the nearest [pointer](#pointer).
+A `manifestdocs.yaml` file marks the root of a tree. It can go in any folder of a docs repo, and one repo can contain several trees. A `manifestdocs.yaml` inside an existing tree starts a separate tree, and the outer tree skips that folder. The tool locates the root by walking up from the current directory to the repo root, then through the nearest [pointer](pointer/pointer.md).
 
 ```yaml
 # manifestdocs.yaml
@@ -27,19 +27,7 @@ Only `name` is required. `merge` defaults to `review`, `statuses` defaults to `[
 
 ## Pointer
 
-Walking up never reaches the root when the tree is in a subfolder of the code repo, such as `docs/`, or in a docs repo cloned beside the code repos. A pointer file, `.manifestdocs/config.yaml`, names the tree for every folder under the folder it's in. `tree` is relative to that folder.
-
-```yaml
-# cookbook/.manifestdocs/config.yaml: a single repo, committed
-tree: docs
-```
-
-```yaml
-# ~/work/cookbook/.manifestdocs/config.yaml: a workspace folder holding the code repos and the docs repo
-tree: cookbook-docs
-```
-
-The nearest pointer at or above the current folder wins, so a repo's own pointer comes before one in a folder above it. A `.manifestdocs/` folder without `config.yaml`, such as one holding only decision drafts, isn't a pointer. Whether the tree is in the working repo follows from where the pointer leads, and isn't a setting.
+When walking up can't reach the root, a [pointer](pointer/pointer.md) file names the tree.
 
 ## Which version the tool reads
 

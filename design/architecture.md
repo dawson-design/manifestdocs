@@ -26,7 +26,7 @@ Shelling out to `gh` reuses the user's auth, SSO and GitHub Enterprise hosts, wi
 
 ## Local folder
 
-`.manifestdocs/` is the tool's only local folder. It holds the [tree pointer](tree-format/tree-format.md#pointer), which can be committed, and decision drafts from sandboxed runs, which ignore themselves (see [sandbox use](sandbox/sandbox.md)). There's no cache or index: the tool reads the files on every run.
+`.manifestdocs/` is the tool's only local folder. It holds the [tree pointer](tree-format/pointer/pointer.md), which can be committed, and decision drafts from sandboxed runs, which ignore themselves (see [sandbox use](sandbox/sandbox.md)). There's no cache or index: the tool reads the files on every run.
 
 ## Future reuse
 
