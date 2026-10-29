@@ -2,11 +2,13 @@
 //! trimmed to an approximate token budget.
 
 use crate::check::Snapshot;
+use crate::decisions;
 use crate::frontmatter;
 use crate::link::{LinkTarget, resolve};
 use crate::markdown::outline;
 use crate::node::NodeLocation;
 use crate::paths::{RepoPath, TreePath};
+use crate::record::{self, ParsedRecord, Record, RecordStatus, find_record, read_records};
 use crate::tokens::{estimate, grouped};
 use crate::tree::{Entry, Tree};
 
@@ -77,6 +79,58 @@ pub fn docs_to_read(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Vec<Repo
     let docs = links(tree, snapshot, entry).docs.into_iter();
     docs.filter(|doc| !snapshot.markdown.contains_key(doc))
         .collect()
+}
+
+/// The decision records `context` reads first: those in the `decisions/` folders of the
+/// target and its ancestors.
+pub fn records_to_read(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Vec<RepoPath> {
+    let nodes = in_full(tree, entry);
+    let in_context = |file: &TreePath| {
+        let owner = decisions::owner(tree, file);
+        owner.is_some_and(|owner| nodes.iter().any(|node| node.file == owner.file))
+    };
+    let unread = unread_records(tree, snapshot).into_iter();
+    unread
+        .filter(|(_, file)| in_context(file))
+        .map(|(path, _)| path)
+        .collect()
+}
+
+/// The decision records to read after the first ones. When a decision that `context` shows
+/// supersedes a record that isn't read yet, that's every other record in the tree, since
+/// only a record's frontmatter gives its ID. Otherwise none.
+pub fn predecessors_to_read(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Vec<RepoPath> {
+    let records = read_records(&tree.config, snapshot);
+    let groups = decisions::grouped(tree, &records, Some(entry));
+    let parsed = groups.iter().flat_map(|group| group.records.iter());
+    let shown = parsed.filter_map(|parsed| parsed.record.as_ref().filter(|r| is_shown(r)));
+    let mut older = shown.filter_map(|record| record.supersedes.as_ref());
+    if !older.any(|id| find_record(&records, id).is_none()) {
+        return Vec::new();
+    }
+    let unread = unread_records(tree, snapshot).into_iter();
+    unread.map(|(path, _)| path).collect()
+}
+
+/// The tree's record files that aren't in the snapshot yet, by repo and tree path.
+fn unread_records(tree: &Tree, snapshot: &Snapshot) -> Vec<(RepoPath, TreePath)> {
+    let root = &snapshot.tree_root;
+    let files = record::records_to_read(&tree.config, root, &snapshot.paths).into_iter();
+    files
+        .filter(|path| !snapshot.markdown.contains_key(path))
+        .filter_map(|path| {
+            let file = path.in_tree(root)?;
+            Some((path, file))
+        })
+        .collect()
+}
+
+/// Superseded and rejected records are left out; `mfd decisions` lists them.
+fn is_shown(record: &Record) -> bool {
+    matches!(
+        record.status,
+        RecordStatus::Accepted | RecordStatus::Proposed
+    )
 }
 
 /// The target's links. Links to the target or an ancestor are left out, since they're in
@@ -210,9 +264,12 @@ struct Piece {
     name: String,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The sections after the target, in the order they're printed. Pieces fill the budget in
+/// their own order, so a section can be printed after pieces that filled the budget later.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
     Ancestors,
+    Decisions,
     LinkedDocs,
     LinkedNodes,
     OtherLinks,
@@ -223,6 +280,7 @@ impl Section {
     fn heading(self) -> &'static str {
         match self {
             Section::Ancestors => "",
+            Section::Decisions => "\n## Decisions\n\n",
             Section::LinkedDocs => "\n## Linked docs\n",
             Section::LinkedNodes => "\n## Linked nodes\n\n",
             Section::OtherLinks => "\n## Other links\n\n",
@@ -289,22 +347,21 @@ fn smaller(
         .find(|fewer| chars(&render(head, pieces, fewer, budget)) < size)
 }
 
+/// The kept pieces by section, and what's left out in fill order.
 fn render(head: &str, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -> String {
     let mut out = head.to_owned();
-    let mut opened: Vec<Section> = Vec::new();
-    let mut omitted = Vec::new();
-    for (piece, kept) in pieces.iter().zip(keep) {
-        if !kept {
-            let tokens = grouped(estimate(&piece.text));
-            omitted.push(format!("{} ({tokens} tokens)", piece.name));
-            continue;
-        }
-        if !opened.contains(&piece.section) {
+    let pieces_kept = pieces.iter().zip(keep).filter(|(_, kept)| **kept);
+    let mut kept: Vec<&Piece> = pieces_kept.map(|(piece, _)| piece).collect();
+    kept.sort_by_key(|piece| piece.section);
+    let mut opened: Option<Section> = None;
+    for piece in kept {
+        if opened != Some(piece.section) {
             out.push_str(piece.section.heading());
-            opened.push(piece.section);
+            opened = Some(piece.section);
         }
         out.push_str(&piece.text);
     }
+    let omitted = omitted(pieces, keep);
     out.push('\n');
     if !omitted.is_empty() {
         out.push_str(&format!("Omitted for budget: {}\n", omitted.join(", ")));
@@ -314,6 +371,17 @@ fn render(head: &str, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -
     let of_budget = of_budget.unwrap_or_default();
     out.push_str(&format!("Estimated size: {size}{of_budget} tokens\n"));
     out
+}
+
+/// Each piece that's left out, with its size, in fill order.
+fn omitted(pieces: &[Piece], keep: &[bool]) -> Vec<String> {
+    let left_out = pieces.iter().zip(keep).filter(|(_, kept)| !**kept);
+    left_out
+        .map(|(piece, _)| {
+            let tokens = grouped(estimate(&piece.text));
+            format!("{} ({tokens} tokens)", piece.name)
+        })
+        .collect()
 }
 
 fn header(entry: &Entry, version: &DocsVersion) -> String {
@@ -405,8 +473,9 @@ fn push_body(out: &mut String, body: &str) {
     }
 }
 
-// In fill order: the ancestors from the parent up to the root, linked docs, linked nodes,
-// other links, then the children. A linked node that's also a child appears once, as a child.
+// In fill order: the target's decisions, each ancestor from the parent up to the root followed
+// by its decisions, linked docs, linked nodes, other links, then the children. A linked node
+// that's also a child appears once, as a child.
 fn pieces(request: &Request) -> Vec<Piece> {
     let Request {
         tree,
@@ -417,10 +486,7 @@ fn pieces(request: &Request) -> Vec<Piece> {
     let links = links(tree, snapshot, entry);
     let children = tree.children(&entry.file);
     let is_child = |file: &&TreePath| children.iter().any(|child| child.file == **file);
-    let ancestors = in_full(tree, entry).into_iter().skip(1).enumerate();
-    let mut pieces: Vec<Piece> = ancestors
-        .map(|(i, ancestor)| ancestor_piece(request, ancestor, i == 0))
-        .collect();
+    let mut pieces = node_pieces(request);
     // A doc that couldn't be read, such as one that isn't UTF-8, is listed with the other
     // links instead.
     let (readable, unreadable): (Vec<&RepoPath>, Vec<&RepoPath>) = links
@@ -443,6 +509,161 @@ fn pieces(request: &Request) -> Vec<Piece> {
     let around = children.iter();
     pieces.extend(around.map(|child| summary(request, Section::Around, "Child: ", child)));
     pieces
+}
+
+/// The target's decisions, then each ancestor followed by its decisions, so trimming from the
+/// end drops the oldest decisions of the farthest ancestors first.
+fn node_pieces(request: &Request) -> Vec<Piece> {
+    let Request { tree, entry, .. } = request;
+    let records = read_records(&tree.config, request.snapshot);
+    let groups = decisions::grouped(tree, &records, Some(entry));
+    let decisions_of = |node: &Entry| -> Vec<Piece> {
+        let group = groups.iter().find(|group| group.node.file == node.file);
+        let parsed = group.into_iter().flat_map(|group| group.records.iter());
+        parsed
+            .filter_map(|parsed| decision_piece(request, &records, parsed))
+            .collect()
+    };
+    let mut pieces = decisions_of(entry);
+    for (i, ancestor) in in_full(tree, entry).into_iter().skip(1).enumerate() {
+        pieces.push(ancestor_piece(request, ancestor, i == 0));
+        pieces.extend(decisions_of(ancestor));
+    }
+    pieces
+}
+
+/// An accepted or proposed decision as one line, or a record with frontmatter errors, whose
+/// status is unknown, as its ID and path.
+fn decision_piece(
+    request: &Request,
+    records: &[ParsedRecord],
+    parsed: &ParsedRecord,
+) -> Option<Piece> {
+    let file = request.snapshot.tree_root.join(parsed.file.as_str());
+    let name = file.map(|file| (request.shown)(&file)).unwrap_or_default();
+    let text = match (&parsed.record, &parsed.id) {
+        (Some(record), _) if is_shown(record) => decision_line(records, record),
+        (Some(_), _) => return None,
+        (None, Some(id)) => format!("- {id} (has problems): {name}\n"),
+        (None, None) => format!("- {name} (has problems)\n"),
+    };
+    Some(Piece {
+        section: Section::Decisions,
+        text,
+        name,
+    })
+}
+
+/// The decision's ID, status and title, the first sentence of its Why paragraph, and the ID
+/// and title of the record it supersedes.
+fn decision_line(records: &[ParsedRecord], record: &Record) -> String {
+    let title = sentence(record.title.as_str());
+    let mut text = format!("- {} ({}): {title}", record.id, record.status.as_str());
+    if let Some(why) = first_why_sentence(&record.body) {
+        text.push_str(&format!(" {why}"));
+    }
+    if let Some(older) = &record.supersedes {
+        text.push_str(&format!(" Supersedes {older}"));
+        // A missing or broken older record, which `check` reports, leaves just its ID.
+        let older = find_record(records, older).and_then(|older| older.record.as_ref());
+        if let Some(older) = older {
+            text.push_str(&format!(": {}", older.title.as_str()));
+        }
+    }
+    text.push('\n');
+    text
+}
+
+/// `title` ending as a sentence, so the Why sentence can follow it.
+fn sentence(title: &str) -> String {
+    match title.ends_with(['.', '!', '?']) {
+        true => title.to_owned(),
+        false => format!("{title}."),
+    }
+}
+
+/// The first sentence of the paragraph that starts `**Why.**`, or of the next paragraph when
+/// the label stands alone. `None` when there's no such paragraph or no reason after it. The
+/// paragraph's lines are joined with single spaces.
+fn first_why_sentence(body: &str) -> Option<String> {
+    let paragraphs = paragraphs(body);
+    let at = paragraphs.iter().position(|p| p.starts_with("**Why.**"))?;
+    let mut reason = paragraphs[at]["**Why.**".len()..].trim();
+    if reason.is_empty() {
+        reason = paragraphs.get(at + 1).filter(|next| !is_label(next))?;
+    }
+    let words: Vec<&str> = reason.split_whitespace().collect();
+    let text = words.join(" ");
+    Some(first_sentence(&text).to_owned())
+}
+
+/// Whether `paragraph` starts with a bold label such as `**Rejected.**`.
+fn is_label(paragraph: &str) -> bool {
+    let label = paragraph
+        .strip_prefix("**")
+        .and_then(|rest| rest.split_once("**"));
+    label.is_some_and(|(label, _)| label.ends_with('.'))
+}
+
+/// Each run of non-blank lines, trimmed and joined with newlines.
+fn paragraphs(body: &str) -> Vec<String> {
+    let mut paragraphs = Vec::new();
+    let mut lines: Vec<&str> = Vec::new();
+    for line in body.lines().chain([""]) {
+        let line = line.trim();
+        if !line.is_empty() {
+            lines.push(line);
+        } else if !lines.is_empty() {
+            paragraphs.push(lines.join("\n"));
+            lines.clear();
+        }
+    }
+    paragraphs
+}
+
+/// Words whose full stop doesn't end a sentence.
+const ABBREVIATIONS: [&str; 4] = ["e.g.", "i.e.", "etc.", "vs."];
+
+/// Up to the first sentence end, or all of `text`. A sentence ends at `.`, `!` or `?`, or one
+/// of them and `)`, outside brackets and parentheses, when the next word starts with a capital
+/// or a digit, or there's no next word. A common abbreviation doesn't end one.
+fn first_sentence(text: &str) -> &str {
+    let mut depth = 0usize;
+    let mut previous = ' ';
+    for (i, c) in text.char_indices() {
+        match c {
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        let after_stop = c == ')' && matches!(previous, '.' | '!' | '?');
+        let end = i + c.len_utf8();
+        if depth == 0 && (matches!(c, '.' | '!' | '?') || after_stop) && ends_sentence(text, end) {
+            return &text[..end];
+        }
+        previous = c;
+    }
+    text
+}
+
+/// Whether a stop that ends at byte `end` of `text` ends a sentence.
+fn ends_sentence(text: &str, end: usize) -> bool {
+    let (before, after) = text.split_at(end);
+    let word = before
+        .rsplit(char::is_whitespace)
+        .next()
+        .unwrap_or_default();
+    let word = word.trim_start_matches(['(', '[']).trim_end_matches(')');
+    let word = word.to_lowercase();
+    if ABBREVIATIONS.contains(&word.as_str()) {
+        return false;
+    }
+    if after.is_empty() {
+        return true;
+    }
+    let next = after.trim_start().chars().next();
+    let spaced = after.starts_with(char::is_whitespace);
+    spaced && next.is_none_or(|next| next.is_uppercase() || next.is_ascii_digit())
 }
 
 fn ancestor_piece(request: &Request, ancestor: &Entry, is_parent: bool) -> Piece {
@@ -519,5 +740,136 @@ mod tests {
     fn needs_a_budget_of_at_least_one_token() {
         assert_eq!(Budget::new(0), None);
         assert!(Budget::new(1).is_some());
+    }
+
+    #[test]
+    fn finds_the_first_sentence_of_the_why_paragraph() {
+        let cases = [
+            (
+                "**Decision.** Twenty.\n\n**Why.** Readers stop at 20. They refine instead.\n",
+                Some("Readers stop at 20."),
+            ),
+            (
+                "**Why.** Readers rarely scroll\npast 20 results.\nThey refine.\n",
+                Some("Readers rarely scroll past 20 results."),
+            ),
+            (
+                "**Why.**\nIt broke the back button!\n",
+                Some("It broke the back button!"),
+            ),
+            (
+                "**Why.** `files.rs` reads blobs\n",
+                Some("`files.rs` reads blobs"),
+            ),
+            ("**Why.** Is it? Yes.\n", Some("Is it?")),
+            (
+                "\r\n**Why.** Windows lines.\r\n\r\nMore.\r\n",
+                Some("Windows lines."),
+            ),
+        ];
+        for (body, expected) in cases {
+            assert_eq!(first_why_sentence(body).as_deref(), expected, "{body}");
+        }
+    }
+
+    #[test]
+    fn finds_no_why_sentence_without_a_paragraph_that_starts_why() {
+        for body in [
+            "",
+            "**Decision.** Twenty.\n",
+            "**Decision.** Twenty. **Why.** Inline.\n",
+            "**Why** without the full stop.\n",
+            "**Why.**\n",
+            "**Why.**\n\n**Rejected.** Infinite scroll.\n",
+        ] {
+            assert_eq!(first_why_sentence(body), None, "{body}");
+        }
+    }
+
+    #[test]
+    fn reads_the_next_paragraph_when_the_why_label_stands_alone() {
+        let body = "**Why.**\n\nReaders stop at 20. They refine.\n\n**Rejected.** Scroll.\n";
+
+        assert_eq!(
+            first_why_sentence(body).as_deref(),
+            Some("Readers stop at 20.")
+        );
+    }
+
+    #[test]
+    fn never_ends_a_sentence_inside_brackets_or_parentheses() {
+        let cases = [
+            (
+                "See [Fig. 2](a.md) for it. More.",
+                "See [Fig. 2](a.md) for it.",
+            ),
+            (
+                "Per the [docs](https://example.com/a. B) it works. More.",
+                "Per the [docs](https://example.com/a. B) it works.",
+            ),
+            (
+                "It failed (see No. 4) twice. More.",
+                "It failed (see No. 4) twice.",
+            ),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(first_sentence(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn ends_a_sentence_only_before_a_capital_a_digit_or_the_end() {
+        let cases = [
+            ("Made in the U.S. today. More.", "Made in the U.S. today."),
+            ("It stops. 20 more follow.", "It stops."),
+            ("It stops! Then more.", "It stops!"),
+            ("Version 2.5 is out. More.", "Version 2.5 is out."),
+            ("The end.", "The end."),
+            ("No stop at all", "No stop at all"),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(first_sentence(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn doesnt_end_a_sentence_after_a_common_abbreviation() {
+        let cases = [
+            (
+                "Tools, e.g. Repomix, agree. More.",
+                "Tools, e.g. Repomix, agree.",
+            ),
+            ("E.g. Repomix agrees. More.", "E.g. Repomix agrees."),
+            (
+                "One way, i.e. This one, works. More.",
+                "One way, i.e. This one, works.",
+            ),
+            (
+                "Files, logs etc. Stay local. More.",
+                "Files, logs etc. Stay local.",
+            ),
+            ("Rust vs. Go was close. More.", "Rust vs. Go was close."),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(first_sentence(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn ends_a_sentence_at_a_stop_before_a_closing_parenthesis() {
+        let cases = [
+            ("It broke (twice.) Then more.", "It broke (twice.)"),
+            ("(It broke.) Then more.", "(It broke.)"),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(first_sentence(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn ends_a_title_as_a_sentence_once() {
+        assert_eq!(sentence("Show 20 per page"), "Show 20 per page.");
+        assert_eq!(sentence("Show 20 per page."), "Show 20 per page.");
+        assert_eq!(sentence("Why 20?"), "Why 20?");
     }
 }

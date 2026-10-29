@@ -14,6 +14,7 @@ Run this before planning. The context is the reviewed record of what to build an
 4. Read the whole output before planning:
    - **Feature** is the node in full: its requirements and acceptance criteria.
    - **Parent**, **Ancestor** and **Project** are the nodes above it, up to the root, in full. Their rules apply to this feature too.
+   - **Decisions** lists the accepted and proposed decision records of the feature and each node above it, one line each: ID, status, title and the first sentence of its reason, nearest node first and newest first within a node. A line ending `Supersedes dc-…` replaces that older decision. A line marked `(has problems)` is a record with frontmatter errors; read its file and tell the user. Follow accepted decisions; treat proposed ones as likely but not yet agreed. Run `manifestdocs show <dc-id>` when a decision's full reasoning or rejected options matter to the task.
    - **Linked docs** are the docs the node links to, in full.
    - **Linked nodes**, **Other links** and **Around this feature** are one-line summaries and paths. Run `manifestdocs show <id>` or read a path when one matters to the task.
 5. If the output has an `Omitted for budget:` line, near the end, read the listed files that matter to the task.
