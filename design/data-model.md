@@ -146,3 +146,76 @@ The types can't express these, so `check` does.
 - A node's supporting docs are files of any type. `manifestdocs.yaml` and decision records aren't supporting docs.
 - Link paths are repo paths, not tree paths, because a link can leave the tree, such as a link to an ADR folder next to it.
 - The snapshot lists what GitHub shows: dotfiles are in, files the repo's `.gitignore` files exclude are out, and nested repos and submodules are skipped. A tracked file that matches `.gitignore` is missed until M2 reads git's index.
+
+## Decision records (M2)
+
+```rust
+struct DecisionId(String);             // "dc-" + exactly 7 lowercase hex
+struct DecisionIdPrefix(String);       // CLI input only: "dc-" + 4 to 7 hex, with `show`
+enum NodeSelector { Id(NodeIdPrefix), Decision(DecisionIdPrefix), Path(TreePath) }
+
+struct Record {
+    id: DecisionId,
+    node: NodeId,                      // must be the node whose `decisions/` folder holds the file
+    title: NonEmptyString,             // double-quoted, as a node's title
+    status: RecordStatus,
+    topic: Topic,                      // kebab case; one accepted record per topic within a node
+    decided_by: Option<String>,
+    date: Date,                        // YYYY-MM-DD
+    source: Vec<IssueRef>,             // owner/repo#n, for issues and pull requests
+    applies_to: Vec<String>,           // free text for readers; never checked
+    supersedes: Option<DecisionId>,
+    body: String,
+}
+enum RecordStatus { Proposed, Accepted, Superseded, Rejected }
+struct ParsedRecord { file: TreePath, id: Option<DecisionId>, record: Option<Record>, findings: Vec<Finding> }
+
+// Problem gains, all errors except the last:
+//   MalformedDecisionId(String), DuplicateDecisionId { also_in: TreePath },
+//   UnknownRecordStatus(String), RecordNodeNotFound(NodeId),
+//   RecordInWrongFolder { node: NodeId },      // `node` isn't the node owning its `decisions/` folder
+//   SupersededRecordNotFound(DecisionId), AcceptedTopicTwice { topic: Topic, also_in: TreePath },
+//   RecordTooLarge { tokens: u32 }             // warning, over a fixed 300
+// Field gains the record fields; MissingField, EmptyField, UnquotedField and WrongType cover them.
+```
+
+- A record is any Markdown file in a node's `decisions/` folder. Its file name, `YYYY-MM-DD-topic.md`, is a convention that `check` doesn't enforce, because frontmatter is the source of truth.
+- Records are read from the same snapshot as nodes, so they come from the working tree or a commit as nodes do.
+
+## Where the tree is read from (M2)
+
+```rust
+enum DocsSource {
+    WorkingTree,                       // inside the docs clone, or the tree is in the working repo
+    Commit { reference: String, commit: String, date: String },  // origin/HEAD, or the `--ref` given
+}
+// DocsVersion gains Commit { reference, commit, date } for the context header.
+```
+
+- Walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so the source is the working tree. Reaching the tree through a pointer from another repo means the source is the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides both, resolved in the docs clone.
+- An unset `origin/HEAD` is an error that prints `git -C <docs clone> remote set-head origin --auto`. A tree outside git always reads the working tree, and `--ref` there is an error.
+- A commit's snapshot lists paths with `git ls-tree -r -z` and reads Markdown with one `git cat-file --batch`, so the core still gets a `Snapshot` and stays free of I/O.
+
+## GitHub (M3)
+
+```rust
+// Everything the binary reads through `gh`. It never writes.
+struct Issue {
+    reference: IssueRef,               // owner/repo#n
+    title: String,
+    state: IssueState,
+    issue_type: Option<String>,        // a display label only
+    created_at: String,                // RFC 3339, for the spec-ref fallback
+    body: String,
+    parent: Option<IssueRef>,
+    sub_issues: Vec<IssueRef>,         // in GitHub's order
+}
+enum IssueState { Open, Closed }
+struct IssueLinks { feature: Option<NodeId>, spec_ref: Option<String> }  // from `feature:` and `spec-ref:` body lines
+enum GhError { Missing, Unauthenticated { host: Host }, NotFound(IssueRef), Failed(String) }
+```
+
+- `gh api graphql --hostname <github.host>` fetches each issue with its parent, sub-issues and issue type. Sub-issues are read level by level until none are left.
+- `GhError` exits 2. `Missing` says to install `gh`. `Unauthenticated` prints `gh auth login --hostname <host>`. Commands that don't need GitHub never call `gh`.
+- `IssueLinks` is parsed in the core from the body text. A line counts only when it starts with `feature:` or `spec-ref:`, outside code blocks.
+- Tests put a fake `gh` script first on `PATH`. It answers each request from a JSON file in the fixture, keyed by issue reference, and fails on any request it has no file for, so a test can't reach GitHub.
