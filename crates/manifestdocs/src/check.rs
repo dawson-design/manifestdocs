@@ -11,7 +11,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use manifestdocs_core::check::{Report, Snapshot, check};
 use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::refs::{Host, IssueRef, RepoRef};
-use manifestdocs_core::work::{GitHubAnswers, WorkLinks, with_github_findings, work_links};
+use manifestdocs_core::work::{
+    GitHubAnswers, IssueBody, WorkLinks, with_github_findings, work_links,
+};
 
 use crate::files::{self, ByDefault};
 use crate::gh::{self, GhError, Lookup};
@@ -79,7 +81,8 @@ fn with_github_rules(report: Report, config: &TreeConfig, snapshot: &Snapshot) -
         return report;
     };
     let mut answers = GitHubAnswers::default();
-    let asked = check_work(&github.host, &links, &mut answers)
+    let bodies = github.check_copied_spec;
+    let asked = check_work(&github.host, &links, bodies, &mut answers)
         .and_then(|()| search(&github.host, &links, &mut answers));
     match asked {
         Ok(()) => with_github_findings(report, &links, &answers),
@@ -90,7 +93,13 @@ fn with_github_rules(report: Report, config: &TreeConfig, snapshot: &Snapshot) -
     }
 }
 
-fn check_work(host: &Host, links: &WorkLinks, answers: &mut GitHubAnswers) -> GhResult {
+// With `bodies`, the lookup also reads each work item's body for the copied-spec rule.
+fn check_work(
+    host: &Host,
+    links: &WorkLinks,
+    bodies: bool,
+    answers: &mut GitHubAnswers,
+) -> GhResult {
     let mut by_repo: BTreeMap<&RepoRef, BTreeSet<u64>> = BTreeMap::new();
     for item in &links.work {
         let numbers = by_repo.entry(item.issue.repo()).or_default();
@@ -98,7 +107,7 @@ fn check_work(host: &Host, links: &WorkLinks, answers: &mut GitHubAnswers) -> Gh
     }
     for (repo, numbers) in by_repo {
         let numbers: Vec<u64> = numbers.into_iter().collect();
-        let lookups = match gh::lookup_issues(host, repo, &numbers) {
+        let lookups = match gh::lookup_issues(host, repo, &numbers, bodies) {
             Err(GhError::Failed(detail)) => {
                 eprintln!(
                     "note: skipped checking the work items in `{repo}`: `gh` failed: {detail}"
@@ -110,7 +119,10 @@ fn check_work(host: &Host, links: &WorkLinks, answers: &mut GitHubAnswers) -> Gh
         for (number, lookup) in lookups {
             let issue = format!("{repo}#{number}");
             match lookup {
-                Lookup::Found => {}
+                Lookup::Found(None) => {}
+                Lookup::Found(Some(body)) => answers
+                    .work_bodies
+                    .extend(IssueRef::parse(&issue).map(|issue| IssueBody { issue, body })),
                 Lookup::NotFound => answers.not_found.extend(IssueRef::parse(&issue)),
                 Lookup::Failed(detail) => eprintln!("note: skipped checking `{issue}`: {detail}"),
             }

@@ -21,7 +21,7 @@ struct TreeConfig {
     merge: MergeMode,                // default Review
     statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"; never empty
 }
-struct GitHubConfig { host: Host, docs_repo: RepoRef }
+struct GitHubConfig { host: Host, docs_repo: RepoRef, check_copied_spec: bool }   // default false
 enum MergeMode { Review, Proposed }
 struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
@@ -242,6 +242,7 @@ struct WorkEntry<'a> {
 IssueNotFound(IssueRef),                                  // error, on the node's `work` line
 IssueNamesUnknownNode { issue: IssueRef, id: NodeId },    // warning, on manifestdocs.yaml
 MalformedFeatureLine { issue: IssueRef, value: String },  // warning, on manifestdocs.yaml
+IssueCopiesSpec { issue: IssueRef, words: usize },        // warning, on the node; with `check_copied_spec`
 ```
 
 - `gh api graphql --hostname <github.host>` fetches issues in batches: one query per repo, with an alias for each issue, split into chunks when a repo has many. It reads each issue's parent, sub-issues and issue type when a command needs them. Sub-issues are read level by level until none are left.

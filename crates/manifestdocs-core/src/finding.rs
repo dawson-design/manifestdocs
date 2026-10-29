@@ -112,6 +112,12 @@ pub enum Problem {
         issue: IssueRef,
         value: String,
     },
+    /// An issue linked to the node whose body shares `words` consecutive words with the
+    /// node's body, at least `COPIED_WORDS`.
+    IssueCopiesSpec {
+        issue: IssueRef,
+        words: usize,
+    },
 }
 
 impl Problem {
@@ -124,7 +130,8 @@ impl Problem {
             | Self::NodeTooLarge { .. }
             | Self::RecordTooLarge { .. }
             | Self::IssueNamesUnknownNode { .. }
-            | Self::MalformedFeatureLine { .. } => Severity::Warning,
+            | Self::MalformedFeatureLine { .. }
+            | Self::IssueCopiesSpec { .. } => Severity::Warning,
             Self::UnparsableFrontmatter(_)
             | Self::MissingField(_)
             | Self::EmptyField(_)
@@ -189,6 +196,7 @@ impl Problem {
             Self::IssueNotFound(_) => "issue_not_found",
             Self::IssueNamesUnknownNode { .. } => "issue_names_unknown_node",
             Self::MalformedFeatureLine { .. } => "malformed_feature_line",
+            Self::IssueCopiesSpec { .. } => "issue_copies_spec",
         }
     }
 }
@@ -353,6 +361,10 @@ impl fmt::Display for Problem {
                 f,
                 "issue `{issue}` has a malformed `feature:` line `{value}`: expected `fd-` and 6 lowercase hex characters"
             ),
+            Self::IssueCopiesSpec { issue, words } => write!(
+                f,
+                "issue `{issue}` copies {words} words in a row from this node; link to the node instead"
+            ),
         }
     }
 }
@@ -421,6 +433,10 @@ mod tests {
                 issue: issue(),
                 value: text(),
             },
+            Problem::IssueCopiesSpec {
+                issue: issue(),
+                words: 50,
+            },
         ];
 
         let codes: Vec<&str> = problems.iter().map(Problem::code).collect();
@@ -461,6 +477,7 @@ mod tests {
                 "issue_not_found",
                 "issue_names_unknown_node",
                 "malformed_feature_line",
+                "issue_copies_spec",
             ]
         );
     }

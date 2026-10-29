@@ -1,6 +1,7 @@
 //! `manifestdocs check`.
 
 mod anchors;
+mod copied_spec;
 mod dogfood;
 mod feature_lines;
 mod files;

@@ -24,6 +24,8 @@ pub struct TreeConfig {
 pub struct GitHubConfig {
     pub host: Host,
     pub docs_repo: RepoRef,
+    /// Whether `check` warns about linked issues that copy their node's text.
+    pub check_copied_spec: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -65,6 +67,7 @@ struct RawConfig {
 struct RawGitHub {
     host: Spanned<String>,
     docs_repo: Spanned<String>,
+    check_copied_spec: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -149,7 +152,11 @@ fn github(raw: RawGitHub) -> Result<GitHubConfig, ConfigError> {
         let message = format!("`docs_repo` `{}` isn't `owner/name`", raw.docs_repo.value);
         at(&raw.docs_repo, message)
     })?;
-    Ok(GitHubConfig { host, docs_repo })
+    Ok(GitHubConfig {
+        host,
+        docs_repo,
+        check_copied_spec: raw.check_copied_spec.unwrap_or(false),
+    })
 }
 
 // A blank `statuses:` reads as absent, so it gets the defaults too.
@@ -221,12 +228,13 @@ mod tests {
 
     #[test]
     fn reads_every_setting() {
-        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\nnode_tokens: 4000\n";
+        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\n  check_copied_spec: true\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\nnode_tokens: 4000\n";
         let config = parse(text).unwrap();
 
         let github = config.github.as_ref().unwrap();
         assert_eq!(github.host.to_string(), "github.com");
         assert_eq!(github.docs_repo.to_string(), "acme/cookbook-docs");
+        assert!(github.check_copied_spec);
         assert_eq!(config.merge, MergeMode::Proposed);
         assert_eq!(status_names(&config), ["draft", "live"]);
         assert_eq!(config.node_tokens.get(), 4_000);
@@ -260,6 +268,10 @@ mod tests {
                 3,
             ),
             ("name: x\ndecisions:\n  merge: sometimes\n", 3),
+            (
+                "name: x\ngithub:\n  host: github.com\n  docs_repo: a/b\n  check_copied_spec: often\n",
+                5,
+            ),
             ("name: x\nnode_tokens: 0\n", 2),
             ("name: x\nnode_tokens: lots\n", 2),
             ("name: x\nnode_tokens: -5\n", 2),
@@ -268,6 +280,12 @@ mod tests {
             let error = parse(text).unwrap_err();
             assert_eq!(error.line, Some(line), "{text:?}: {}", error.message);
         }
+    }
+
+    #[test]
+    fn leaves_the_copied_spec_rule_off_by_default() {
+        let config = parse("name: x\ngithub:\n  host: github.com\n  docs_repo: a/b\n").unwrap();
+        assert!(!config.github.unwrap().check_copied_spec);
     }
 
     #[test]

@@ -21,7 +21,8 @@ pub enum GhError {
 /// Whether `gh` can read one issue.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Lookup {
-    Found,
+    /// With the issue's body when it was asked for.
+    Found(Option<String>),
     /// The issue, or its repo, doesn't exist or can't be read.
     NotFound,
     Failed(String),
@@ -38,31 +39,22 @@ const SEARCH_QUERY: &str = "query($q: String!, $cursor: String) { \
     issueCount pageInfo { hasNextPage endCursor } nodes { ... on Issue { number body } } } }";
 
 /// Asks whether each of `numbers` is an issue in `repo` that `gh` can read, in batches of
-/// up to 100 issues per query. An error fails the whole repo.
+/// up to 100 issues per query. With `bodies`, the same query reads each issue's body. An
+/// error fails the whole repo.
 pub fn lookup_issues(
     host: &Host,
     repo: &RepoRef,
     numbers: &[u64],
+    bodies: bool,
 ) -> Result<Vec<(u64, Lookup)>, GhError> {
+    let fields = if bodies { "number body" } else { "number" };
     let mut lookups = Vec::new();
     for batch in numbers.chunks(BATCH) {
-        let query = existence_query(batch);
+        let query = aliased_query(batch, fields);
         let response = graphql(host, &repo_fields(&query, repo))?;
         lookups.extend(read_lookups(&response, batch).map_err(GhError::Failed)?);
     }
     Ok(lookups)
-}
-
-// Each issue gets an alias, such as `i41`, so one query can ask about many.
-fn existence_query(numbers: &[u64]) -> String {
-    let issues: Vec<String> = numbers
-        .iter()
-        .map(|number| format!("i{number}: issue(number: {number}) {{ number }}"))
-        .collect();
-    format!(
-        "query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {} }} }}",
-        issues.join(" ")
-    )
 }
 
 fn read_lookups(response: &Value, numbers: &[u64]) -> Result<Vec<(u64, Lookup)>, String> {
@@ -76,8 +68,9 @@ fn read_lookups(response: &Value, numbers: &[u64]) -> Result<Vec<(u64, Lookup)>,
     }
     let lookup = |number: u64| {
         let alias = format!("i{number}");
-        if repository.get(&alias).is_some_and(Value::is_object) {
-            return Lookup::Found;
+        if let Some(issue) = repository.get(&alias).filter(|issue| issue.is_object()) {
+            let body = issue.get("body").and_then(Value::as_str);
+            return Lookup::Found(body.map(str::to_owned));
         }
         match error_at(response, &["repository", &alias]) {
             Some((true, _)) => Lookup::NotFound,
@@ -575,7 +568,7 @@ mod tests {
         assert_eq!(
             lookups(response, &[1, 2, 3]),
             Ok(vec![
-                (1, Lookup::Found),
+                (1, Lookup::Found(None)),
                 (2, Lookup::NotFound),
                 (3, Lookup::Failed("no access".into()))
             ])
