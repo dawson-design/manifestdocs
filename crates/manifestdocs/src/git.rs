@@ -214,12 +214,21 @@ const REPO_VARIABLES: [&str; 5] = [
     "GIT_COMMON_DIR",
 ];
 
+/// Variables that change how git reads a pathspec, such as `GIT_LITERAL_PATHSPECS`, which
+/// would turn off the magic `PathSet` relies on.
+const PATHSPEC_VARIABLES: [&str; 4] = [
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_GLOB_PATHSPECS",
+    "GIT_NOGLOB_PATHSPECS",
+    "GIT_ICASE_PATHSPECS",
+];
+
 /// `git -C folder`, reading only that folder's repo. `GIT_NO_LAZY_FETCH` stops a partial
 /// clone fetching a missing object, so the tool never reaches the network.
 fn command(folder: &Path) -> Command {
     let mut command = Command::new("git");
     command.arg("-C").arg(folder).env("GIT_NO_LAZY_FETCH", "1");
-    for name in REPO_VARIABLES {
+    for name in REPO_VARIABLES.iter().chain(&PATHSPEC_VARIABLES) {
         command.env_remove(name);
     }
     command
@@ -243,6 +252,156 @@ pub fn clone_state(folder: &Path) -> Option<manifestdocs_core::decide::CloneStat
     })
 }
 
+/// The files under a folder of the repo, less the files and folders in `excluded`, all from
+/// the repo root. Names are literal, so `*` in one matches only itself.
+pub struct PathSet {
+    /// `""` for the whole repo.
+    pub folder: String,
+    pub excluded: Vec<String>,
+}
+
+impl PathSet {
+    fn pathspecs(&self) -> Vec<String> {
+        let folder = match self.folder.as_str() {
+            "" => ":(top)".to_owned(),
+            folder => format!(":(top,literal){folder}"),
+        };
+        let excluded = self.excluded.iter();
+        let excluded = excluded.map(|path| format!(":(top,literal,exclude){path}"));
+        std::iter::once(folder).chain(excluded).collect()
+    }
+}
+
+/// The latest commit in `head`'s history that changed a file in `paths`, leaving out the
+/// commits in `base`'s history. Without `base`, every commit in `head`'s history counts.
+/// `head` and `base` are commit IDs, as `resolve` gives them.
+#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
+pub fn latest_change(
+    clone: &Path,
+    base: Option<&str>,
+    head: &str,
+    paths: &PathSet,
+) -> Result<Option<Commit>> {
+    let not_base = base.map(|base| format!("^{base}"));
+    let mut args = vec!["rev-list", "-1", head];
+    args.extend(not_base.as_deref());
+    args.push("--");
+    let pathspecs = paths.pathspecs();
+    args.extend(pathspecs.iter().map(String::as_str));
+    found(clone, &run(clone, &args)?)
+}
+
+/// The last commit on `head`'s first-parent line, its default branch's own history, made
+/// before `time`, such as an issue's creation time in RFC 3339. `None` when every commit is
+/// later. Merged branches' commits are skipped, since they weren't on the branch at `time`.
+#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
+pub fn commit_before(clone: &Path, head: &str, time: &str) -> Result<Option<Commit>> {
+    let before = format!("--before={time}");
+    let args = ["rev-list", "-1", "--first-parent", &before, head];
+    found(clone, &run(clone, &args)?)
+}
+
+/// The commit `id` names, or `None` for no ID.
+fn found(clone: &Path, id: &str) -> Result<Option<Commit>> {
+    if id.is_empty() {
+        return Ok(None);
+    }
+    let commit = resolve(clone, id).ok_or_else(|| anyhow!("can't read commit {id}"))?;
+    Ok(Some(commit))
+}
+
+/// A file a diff changed, by its path from the repo root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileChange {
+    pub path: String,
+    pub lines: Lines,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Lines {
+    Text { added: u64, removed: u64 },
+    Binary,
+}
+
+/// The files in `paths` that differ between `base` and `head`, in path order. Without `base`,
+/// every file in `head` is added. A renamed file is one deleted and one added.
+#[cfg_attr(not(test), expect(dead_code, reason = "`stale` uses it next"))]
+pub fn diff_summary(
+    clone: &Path,
+    base: Option<&str>,
+    head: &str,
+    paths: &PathSet,
+) -> Result<Vec<FileChange>> {
+    let empty;
+    let base = match base {
+        Some(base) => base,
+        None => {
+            empty = run(clone, &["hash-object", "-t", "tree", "--stdin"])?;
+            &empty
+        }
+    };
+    // `diff-tree` is plumbing, so diff settings in the user's config don't change its output.
+    let mut args = vec![
+        "diff-tree",
+        "-r",
+        "--numstat",
+        "--no-renames",
+        "-z",
+        base,
+        head,
+    ];
+    args.push("--");
+    let pathspecs = paths.pathspecs();
+    args.extend(pathspecs.iter().map(String::as_str));
+    let listing = run_bytes(clone, &args)?;
+    let entries = listing.split(|byte| *byte == 0).filter(|e| !e.is_empty());
+    // A path that isn't UTF-8 can't be a node's file, so it's skipped.
+    let entries = entries.filter_map(|entry| std::str::from_utf8(entry).ok());
+    entries.map(file_change).collect()
+}
+
+/// One `--numstat` line: lines added, lines removed and the path, or `-` for both counts of
+/// a binary file.
+fn file_change(entry: &str) -> Result<FileChange> {
+    let unexpected = || anyhow!("unexpected `git diff-tree` output: {entry}");
+    let mut fields = entry.splitn(3, '\t');
+    let (Some(added), Some(removed), Some(path)) = (fields.next(), fields.next(), fields.next())
+    else {
+        return Err(unexpected());
+    };
+    let lines = match (added, removed) {
+        ("-", "-") => Lines::Binary,
+        _ => Lines::Text {
+            added: added.parse().map_err(|_| unexpected())?,
+            removed: removed.parse().map_err(|_| unexpected())?,
+        },
+    };
+    Ok(FileChange {
+        path: path.to_owned(),
+        lines,
+    })
+}
+
+/// `git`'s trimmed output, or an error with git's own message, so a missing object in a
+/// partial clone isn't read as no answer.
+fn run(folder: &Path, args: &[&str]) -> Result<String> {
+    let stdout = String::from_utf8(run_bytes(folder, args)?);
+    Ok(stdout
+        .context("`git` printed text that isn't UTF-8")?
+        .trim()
+        .to_owned())
+}
+
+fn run_bytes(folder: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let output = command(folder).args(args).output();
+    let output = output.context("can't run `git`")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("`git {}` failed: {}", args[0], stderr.trim());
+    }
+    Ok(output.stdout)
+}
+
 /// `git`'s trimmed output, or `None` when it fails or isn't installed.
 fn git(folder: &Path, args: &[&str]) -> Option<String> {
     let stdout = String::from_utf8(output(folder, args)?).ok()?;
@@ -253,4 +412,143 @@ fn git(folder: &Path, args: &[&str]) -> Option<String> {
 fn output(folder: &Path, args: &[&str]) -> Option<Vec<u8>> {
     let output = command(folder).args(args).output().ok()?;
     output.status.success().then_some(output.stdout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A repo in the temp folder, removed when dropped.
+    struct Repo(PathBuf);
+
+    impl Repo {
+        fn new(name: &str) -> Self {
+            let name = format!("mfd-git-{name}-{}", std::process::id());
+            let root = std::env::temp_dir().join(name);
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).unwrap();
+            let repo = Self(root);
+            repo.git(&["init", "-q", "-b", "main"], "2026-01-01T00:00:00Z");
+            repo
+        }
+
+        fn write(&self, path: &str, contents: &[u8]) {
+            let path = self.0.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+
+        /// Commits everything at `date`, returning the commit's ID.
+        fn commit(&self, date: &str) -> String {
+            self.git(&["add", "-A"], date);
+            self.git(&["commit", "-q", "--allow-empty", "-m", date], date);
+            self.git(&["rev-parse", "HEAD"], date)
+        }
+
+        fn git(&self, args: &[&str], date: &str) -> String {
+            let output = command(&self.0)
+                .args(["-c", "user.name=Sam", "-c", "user.email=sam@example.com"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .env("HOME", &self.0)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_DATE", date)
+                .env("GIT_COMMITTER_DATE", date)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        }
+    }
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn paths(folder: &str, excluded: &[&str]) -> PathSet {
+        PathSet {
+            folder: folder.to_owned(),
+            excluded: excluded.iter().map(|path| (*path).to_owned()).collect(),
+        }
+    }
+
+    fn id(commit: Option<Commit>) -> Option<String> {
+        commit.map(|commit| commit.id)
+    }
+
+    #[test]
+    fn finds_the_latest_change_to_a_folder_less_its_exclusions() {
+        let repo = Repo::new("latest");
+        for path in ["a/a.md", "a/b/b.md", "a/decisions/d.md", "root.md"] {
+            repo.write(path, b"1\n");
+        }
+        let first = repo.commit("2026-10-01T10:00:00Z");
+        repo.write("a/b/b.md", b"2\n");
+        repo.commit("2026-10-03T10:00:00Z");
+        repo.write("a/decisions/d.md", b"2\n");
+        repo.commit("2026-10-05T10:00:00Z");
+        repo.write("root.md", b"2\n");
+        let last = repo.commit("2026-10-07T10:00:00Z");
+        let a = paths("a", &["a/b", "a/decisions"]);
+        let all_but_a = paths("", &["a"]);
+
+        let latest = |base, paths| latest_change(&repo.0, base, &last, paths).unwrap();
+
+        assert_eq!(id(latest(None, &a)), Some(first.clone()));
+        assert_eq!(id(latest(Some(&first), &a)), None);
+        assert_eq!(id(latest(Some(&first), &all_but_a)), Some(last.clone()));
+    }
+
+    #[test]
+    fn finds_the_last_commit_on_the_first_parent_line_before_a_time() {
+        let repo = Repo::new("before");
+        let first = repo.commit("2026-10-01T10:00:00Z");
+        repo.git(&["checkout", "-q", "-b", "side"], "2026-10-02T10:00:00Z");
+        repo.commit("2026-10-02T10:00:00Z");
+        repo.git(&["checkout", "-q", "main"], "2026-10-03T10:00:00Z");
+        let second = repo.commit("2026-10-03T10:00:00Z");
+        let merge = ["merge", "-q", "--no-ff", "-m", "Merge", "side"];
+        repo.git(&merge, "2026-10-05T10:00:00Z");
+        let head = repo.git(&["rev-parse", "HEAD"], "2026-10-05T10:00:00Z");
+
+        let before = |time| id(commit_before(&repo.0, &head, time).unwrap());
+
+        assert_eq!(before("2026-10-02T12:00:00Z"), Some(first));
+        assert_eq!(before("2026-10-04T00:00:00Z"), Some(second));
+        assert_eq!(before("2026-09-01T00:00:00Z"), None);
+    }
+
+    #[test]
+    fn summarises_the_files_changed_under_a_folder() {
+        let repo = Repo::new("diff");
+        repo.write("a/a.md", b"1\n");
+        repo.write("a/flow.png", &[0, 1, 2]);
+        repo.write("b.md", b"1\n");
+        let first = repo.commit("2026-10-01T10:00:00Z");
+        repo.write("a/a.md", b"2\n3\n");
+        repo.write("a/new.md", b"1\n");
+        repo.write("b.md", b"2\n");
+        let second = repo.commit("2026-10-03T10:00:00Z");
+        let text = |path: &str, added, removed| FileChange {
+            path: path.to_owned(),
+            lines: Lines::Text { added, removed },
+        };
+
+        let diff = |base| diff_summary(&repo.0, base, &second, &paths("a", &[])).unwrap();
+
+        assert_eq!(
+            diff(Some(&first)),
+            [text("a/a.md", 2, 1), text("a/new.md", 1, 0)]
+        );
+        let binary = FileChange {
+            path: "a/flow.png".to_owned(),
+            lines: Lines::Binary,
+        };
+        assert_eq!(
+            diff(None),
+            [text("a/a.md", 2, 0), binary, text("a/new.md", 1, 0)]
+        );
+    }
 }
