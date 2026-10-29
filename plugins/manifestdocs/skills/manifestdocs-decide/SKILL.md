@@ -56,7 +56,7 @@ Skip personal preferences, which belong in your local memory, and details that t
 
 When the decision changes what a feature does, also draft the change to the node's requirements and scenarios with the `manifestdocs-author` skill, and show it with the record. Both go in the same docs pull request: the spec states the behaviour, and the record keeps the why and the rejected options.
 
-When the decision changes an approved spec or spans several nodes, offer to draft an ADR from the record afterwards, in the docs repo's own ADR format.
+When the decision changes an approved spec or spans several nodes, offer to draft an ADR from the record afterwards, in the docs repo's own ADR format, and ask where ADRs go if the repo has none. It gets its own docs pull request by the write path below, with the ADR in place of step 3. Once that pull request merges, promote the record in another one: change its `status:` line to `superseded`, and end its body with a link to the ADR, such as `**Superseded by.** [ADR 12: Search page size](../../adr/0012-search-page-size.md)`. Edit the record file directly, because `manifestdocs decide` only writes new records.
 
 ## Write it: interactive session
 
