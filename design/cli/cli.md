@@ -42,6 +42,7 @@ With `--json`, every command prints one JSON object to stdout, in schema version
 
 - A command that can't run prints `{ "schema": 1, "command": "<name>", "error": "<message>" }` instead of `data`. Exit codes stay the same as for text.
 - Keys are snake case. A field with no value is `null`, never left out, and a list with no items is `[]`.
+- A text field that's known but empty is `""`, and `null` means the value is unknown, such as when a node's frontmatter has errors. `body` is the trimmed text, so a node with no body has `""`.
 - Paths are relative to the current folder, as in text output. IDs are always full length.
 - A finding is `{ "file", "line", "severity", "code", "message" }`. `code` is the problem's name in snake case, such as `broken_link`, and `message` is the text line's message.
 - Adding a field keeps version 1. Removing or renaming a field, or changing its type, raises the version.

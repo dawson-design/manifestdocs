@@ -3,6 +3,7 @@ mod context;
 mod files;
 mod git;
 mod init;
+mod json;
 mod locate;
 mod report;
 mod show;
@@ -10,7 +11,7 @@ mod tree;
 
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 /// Feature trees, agent context and decision records for docs repos.
 #[derive(Parser)]
@@ -29,6 +30,9 @@ enum Command {
         /// Exit with 1 on warnings too, such as to gate CI on them
         #[arg(long)]
         strict: bool,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Print an outline of the nodes, with their IDs, statuses and files
     Tree {
@@ -37,11 +41,17 @@ enum Command {
         /// How many levels below the start to show
         #[arg(long)]
         depth: Option<usize>,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Print one node in full, with its parent and supporting docs
     Show {
         /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
         node: String,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Print a node's context for a coding agent: the node, the root node, the docs it links
     /// to and the nodes around it
@@ -62,16 +72,33 @@ enum Command {
     },
 }
 
+impl Command {
+    /// The command's name, when it's asked for JSON output.
+    fn json(&self) -> Option<&'static str> {
+        match self {
+            Self::Check { json: true, .. } => Some("check"),
+            Self::Tree { json: true, .. } => Some("tree"),
+            Self::Show { json: true, .. } => Some("show"),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
     Md,
 }
 
 fn main() -> ExitCode {
-    let result = match Cli::parse().command {
-        Command::Check { path, strict } => check::run(path.as_deref(), strict),
-        Command::Tree { path, depth } => tree::run(path.as_deref(), depth),
-        Command::Show { node } => show::run(&node),
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => return json::usage_error(error, &Cli::command()),
+    };
+    let json = cli.command.json();
+    let result = match cli.command {
+        Command::Check { path, strict, json } => check::run(path.as_deref(), strict, json),
+        Command::Tree { path, depth, json } => tree::run(path.as_deref(), depth, json),
+        Command::Show { node, json } => show::run(&node, json),
         Command::Context {
             node,
             format: Format::Md,
@@ -79,8 +106,11 @@ fn main() -> ExitCode {
         } => context::run(&node, budget),
         Command::Init { title } => init::run(title.as_deref()),
     };
-    result.unwrap_or_else(|error| {
-        eprintln!("error: {error:#}");
-        ExitCode::from(2)
+    result.unwrap_or_else(|error| match json {
+        Some(command) => json::fail(command, &error),
+        None => {
+            eprintln!("error: {error:#}");
+            ExitCode::from(2)
+        }
     })
 }

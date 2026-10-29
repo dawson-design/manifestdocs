@@ -10,10 +10,11 @@ use manifestdocs_core::paths::TreePath;
 use manifestdocs_core::tree::Tree;
 
 use crate::files;
+use crate::json;
 use crate::locate::{locate, tree_path};
 use crate::report::{relative, write_stdout};
 
-pub fn run(path: Option<&str>, depth: Option<usize>) -> Result<ExitCode> {
+pub fn run(path: Option<&str>, depth: Option<usize>, json: bool) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let roots = locate(&cwd)?;
     let tree = files::tree(&roots, &cwd)?;
@@ -22,6 +23,10 @@ pub fn run(path: Option<&str>, depth: Option<usize>) -> Result<ExitCode> {
         None => TreePath::default(),
     };
     let lines = tree.outline(&folder, depth);
+    if json {
+        json::tree(&tree, &lines, &roots.tree_root, &cwd)?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let top = lines.first().map_or(0, |(level, _)| *level);
     let mut out = String::new();
     for (level, entry) in lines {

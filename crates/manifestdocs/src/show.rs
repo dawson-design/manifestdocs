@@ -15,11 +15,12 @@ use manifestdocs_core::tree::{Entry, NodeSelector, SelectError, Tree};
 mod record;
 
 use crate::files;
+use crate::json;
 use crate::locate::locate;
 use crate::report::{finding_line, relative, write_stdout};
 use crate::tree::path_in_tree;
 
-pub fn run(arg: &str) -> Result<ExitCode> {
+pub fn run(arg: &str, json: bool) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let roots = locate(&cwd)?;
     let (tree, mut snapshot) = files::tree_and_snapshot(&roots, &cwd)?;
@@ -29,6 +30,12 @@ pub fn run(arg: &str) -> Result<ExitCode> {
     };
     let selector = show_selector(&tree, arg, &paths)?;
     if let NodeSelector::Decision(prefix) = &selector {
+        // A record's JSON shape isn't settled yet, so `--json` refuses rather than printing text.
+        if json {
+            return Err(anyhow!(
+                "`show --json` doesn't support decision records yet"
+            ));
+        }
         files::read_records(&mut snapshot, &roots, &tree.config, &cwd)?;
         let records = read_records(&tree.config, &snapshot);
         return record::run(&tree, &records, arg, prefix, &paths);
@@ -36,6 +43,15 @@ pub fn run(arg: &str) -> Result<ExitCode> {
     let entry = tree
         .select(&selector)
         .map_err(|error| select_error(arg, error, &paths))?;
+    if json {
+        json::show(&tree, entry, &roots.tree_root, &cwd)?;
+        let failed = entry.node.is_err();
+        return Ok(if failed {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
     match &entry.node {
         Ok(node) => {
             write_stdout(&render(&tree, entry, node, &paths))?;
