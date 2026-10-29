@@ -3,9 +3,14 @@ name = "manifestdocs"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+default-run = "manifestdocs"
 
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 ignore = "0.4.34"
 manifestdocs-core = { path = "../manifestdocs-core" }
+
+[[bin]]
+name = "mfd"
+path = "src/bin/mfd.rs"
