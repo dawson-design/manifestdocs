@@ -207,19 +207,35 @@ enum DocsSource {
 
 ```rust
 // Everything the binary reads through `gh`. It never writes.
+// `work` reads this shape. `context <issue>` (B3) and `stale` (B4) add `body: String` and
+// `created_at: String` (RFC 3339, for the spec-ref fallback) when they need them.
 struct Issue {
     reference: IssueRef,               // owner/repo#n
     title: String,
     state: IssueState,
     issue_type: Option<String>,        // a display label only
-    created_at: String,                // RFC 3339, for the spec-ref fallback
-    body: String,
     parent: Option<IssueRef>,
-    sub_issues: Vec<IssueRef>,         // in GitHub's order
+    sub_issues: Vec<SubIssue>,         // in GitHub's order
 }
 enum IssueState { Open, Closed }
+enum SubIssue { Issue(IssueRef), Unreadable(Unreadable) }  // GitHub can list a sub-issue it can't return
+enum Unreadable { NotFound, Failed(String) }               // why `gh` couldn't read one issue
 struct IssueLinks { feature: Option<NodeId>, spec_ref: Option<String> }  // from `feature:` and `spec-ref:` body lines
-enum GhError { Missing, Unauthenticated { host: Host }, NotFound(IssueRef), Failed(String) }
+enum GhError { Missing, Unauthenticated { host: Host }, Failed(String) }
+
+// `work`, in the core
+struct IssueKey(String);                                   // an IssueRef compared without case
+type Fetched = BTreeMap<IssueKey, Result<Issue, Unreadable>>;
+type Parents = BTreeMap<IssueKey, Option<IssueRef>>;       // each parent's parent, up to the top
+type Takeovers<'a> = BTreeMap<IssueKey, &'a Entry>;        // issues deeper nodes list, and the node
+struct WorkEntry<'a> {
+    reference: Option<&'a IssueRef>,                       // `None` for a sub-issue GitHub couldn't return
+    issue: Result<&'a Issue, &'a Unreadable>,
+    parents: Vec<&'a IssueRef>,                            // nearest first
+    done: Option<usize>,                                   // closed sub-issues; `None` when taken over
+    listed_by: Option<&'a Entry>,
+    sub_issues: Vec<WorkEntry<'a>>,
+}
 
 // New `Problem` variants for `check`'s GitHub rules
 IssueNotFound(IssueRef),                                  // error, on the node's `work` line
@@ -228,6 +244,7 @@ MalformedFeatureLine { issue: IssueRef, value: String },  // warning, on manifes
 ```
 
 - `gh api graphql --hostname <github.host>` fetches issues in batches: one query per repo, with an alias for each issue, split into chunks when a repo has many. It reads each issue's parent, sub-issues and issue type when a command needs them. Sub-issues are read level by level until none are left.
+- An issue `gh` can't read, or every issue in a repo it can't read, is `Unreadable`, and doesn't stop the command: `work` marks it and exits 1. A failure of a whole query, such as a rate limit, is `GhError::Failed`.
 - `GhError` exits 2, except in `check`, which doesn't need GitHub: it prints a `note:` on stderr, skips the GitHub rules the error affects, and checks the rest. `Missing` says to install `gh`. `Unauthenticated` prints `gh auth login --hostname <host>`. Commands that don't need GitHub never call `gh`.
 - `IssueLinks` is parsed in the core from the body text. A line counts only when it starts with `feature:` or `spec-ref:`, outside code blocks.
 - Tests put a fake `gh` script first on `PATH`. It answers each request from JSON files in the fixture: issue lookups are keyed by issue reference, and searches by repo and page cursor. It fails on any request it has no file for, so a test can't reach GitHub.
