@@ -78,7 +78,7 @@ Estimated size: 236 of 8,000 tokens
 
 ## Use it from Claude Code
 
-The plugin in `plugins/manifestdocs` has four skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, and `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree. Its commands follow one workflow: `/manifestdocs:explore`, `/manifestdocs:propose`, `/manifestdocs:apply`, `/manifestdocs:verify` and `/manifestdocs:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/manifestdocs:record` reviews the session for decisions worth recording. Install it from a clone of this repo:
+The plugin in `plugins/manifestdocs` has five skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree, and `manifestdocs-plan-issue`, which drafts issues linked to a node and creates them with `gh` once approved. Its commands follow one workflow: `/manifestdocs:explore`, `/manifestdocs:propose`, `/manifestdocs:apply`, `/manifestdocs:verify` and `/manifestdocs:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/manifestdocs:record` reviews the session for decisions worth recording. Install it from a clone of this repo:
 
 ```sh
 claude plugin marketplace add /path/to/manifestdocs
