@@ -16,7 +16,7 @@ use crate::copied::{NodeBody, copied_spec_findings, node_bodies};
 use crate::finding::{Field, Finding, Problem};
 use crate::id::NodeId;
 use crate::layout::layout;
-use crate::node::{Node, ParsedNode};
+use crate::node::{self, Node, ParsedNode};
 use crate::paths::TreePath;
 use crate::refs::{IssueRef, RepoRef};
 use crate::tree::{Entry, Tree};
@@ -492,6 +492,15 @@ pub enum Unlinked {
         "issue `{0}` links to no node: no node lists it or a parent in `work`, and none of them has a `feature:` line"
     )]
     NoNode(IssueRef),
+    /// Nothing up to `parent` links to a node, and `gh` can't read `parent` to look above it.
+    #[error(
+        "issue `{issue}` links to no node below its parent `{parent}`, which can't be read: {why}"
+    )]
+    UnreadableParent {
+        issue: IssueRef,
+        parent: IssueRef,
+        why: Unreadable,
+    },
     /// `IssueNamesUnknownNode` or `MalformedFeatureLine`, worded as `check` words it.
     #[error("{0}")]
     FeatureLine(Problem),
@@ -526,9 +535,14 @@ impl IssueChain {
 
     /// The node the issue links to. From the issue up through its parents, the first that a
     /// node lists in `work`, or whose body has a `feature:` line, names it. On one issue, a
-    /// node's `work` comes first, and of two `feature:` lines, the first.
-    pub fn linked_node<'a>(&self, tree: &'a Tree) -> Result<&'a Entry, Unlinked> {
-        let listed = listed_work(tree);
+    /// node's `work` comes first, and of two `feature:` lines, the first. A parent `gh` can't
+    /// read ends the walk, since the issues above it are unknown.
+    pub fn linked_node<'a>(
+        &self,
+        tree: &'a Tree,
+        snapshot: &Snapshot,
+    ) -> Result<&'a Entry, Box<Unlinked>> {
+        let listed = work_listings(tree, snapshot);
         let parents = self.parents.iter().map(|parent| match parent {
             Ok(issue) => (&issue.reference, Some(issue.body.as_str())),
             Err((reference, _)) => (reference, None),
@@ -542,41 +556,59 @@ impl IssueChain {
                 return named_node(tree, reference, value);
             }
         }
-        Err(Unlinked::NoNode(self.issue.reference.clone()))
+        let issue = self.issue.reference.clone();
+        Err(Box::new(match self.parents.last() {
+            Some(Err((parent, why))) => Unlinked::UnreadableParent {
+                issue,
+                parent: parent.clone(),
+                why: why.clone(),
+            },
+            _ => Unlinked::NoNode(issue),
+        }))
     }
 }
 
 /// The node a `feature:` line's `value` names.
-fn named_node<'a>(tree: &'a Tree, issue: &IssueRef, value: &str) -> Result<&'a Entry, Unlinked> {
+fn named_node<'a>(
+    tree: &'a Tree,
+    issue: &IssueRef,
+    value: &str,
+) -> Result<&'a Entry, Box<Unlinked>> {
     let issue = issue.clone();
     let Some(id) = NodeId::parse(value) else {
         let value = value.to_owned();
-        return Err(Unlinked::FeatureLine(Problem::MalformedFeatureLine {
-            issue,
-            value,
-        }));
+        let problem = Problem::MalformedFeatureLine { issue, value };
+        return Err(Box::new(Unlinked::FeatureLine(problem)));
     };
     let entry = tree.entries.values().find(|entry| entry.id == id);
-    entry.ok_or(Unlinked::FeatureLine(Problem::IssueNamesUnknownNode {
-        issue,
-        id,
-    }))
+    let problem = || Problem::IssueNamesUnknownNode { issue, id };
+    entry.ok_or_else(|| Box::new(Unlinked::FeatureLine(problem())))
 }
 
 /// Each issue the tree's nodes list in `work`, with the node it links to. When two nodes list
 /// one issue, the shallower node takes it, and of two at one depth, the first in outline
 /// order, as in `takeovers`.
-fn listed_work(tree: &Tree) -> BTreeMap<IssueKey, &Entry> {
+fn work_listings<'a>(tree: &'a Tree, snapshot: &Snapshot) -> BTreeMap<IssueKey, &'a Entry> {
     let mut nodes = tree.outline(&TreePath::default(), None);
     nodes.sort_by_key(|(level, _)| *level);
     let mut listed = BTreeMap::new();
     for (_, entry) in nodes {
-        let work = entry.node.iter().flat_map(|node| node.work.iter());
-        for issue in work {
-            listed.entry(IssueKey::from(issue)).or_insert(entry);
+        for issue in entry_work(snapshot, entry) {
+            listed.entry(IssueKey::from(&issue)).or_insert(entry);
         }
     }
     listed
+}
+
+// A node with frontmatter errors still links its issues, so `context` prints its errors
+// rather than letting a node above it stand in.
+fn entry_work(snapshot: &Snapshot, entry: &Entry) -> Vec<IssueRef> {
+    if let Ok(node) = &entry.node {
+        return node.work.clone();
+    }
+    let file = snapshot.tree_root.join(entry.file.as_str());
+    let text = file.and_then(|file| snapshot.markdown.get(&file));
+    text.map_or_else(Vec::new, |text| node::listed_work(text))
 }
 
 #[cfg(test)]

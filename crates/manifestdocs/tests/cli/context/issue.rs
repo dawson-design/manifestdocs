@@ -337,3 +337,103 @@ fn writes_an_issues_context_from_origin_head_to_a_file() {
     assert_eq!(run.stderr, format!("Wrote {out}\n"));
     assert_eq!((run.code, run.stdout.as_str()), (0, ""));
 }
+
+/// Filters lists #58 but has a bad status, so its errors print, as for `context fd-7c2e99`,
+/// rather than Search, which lists #41 above it, standing in.
+#[test]
+fn prints_the_errors_of_a_broken_node_that_lists_a_parent() {
+    let fixture = cookbook("context-issue-broken-node", "acme/cookbook-docs#58");
+    let file = fixture.path("recipes/search/filters/filters.md");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("status: draft", "status: nonsense")).unwrap();
+    hierarchy(&fixture, ["", ""]);
+
+    let run = fixture.run_with_gh("", &["context", "acme/cookbook-docs#60"]);
+    let by_id = fixture.run("", &["context", "fd-7c2e99"]);
+
+    assert!(run.stdout.contains("filters.md"), "{}", run.stdout);
+    assert_eq!(run.stdout, by_id.stdout);
+    assert_eq!((run.code, by_id.code), (1, 1), "{}", run.stderr);
+}
+
+#[test]
+fn stops_at_a_parent_it_cant_read_when_nothing_below_links_to_a_node() {
+    let fixture = cookbook("context-issue-unread-unlinked", "");
+    hierarchy(&fixture, ["", ""]);
+    // Search lists #41, but the walk can't get past #58 to reach it.
+    fixture.gh_unreadable_issue("github.com", "acme/cookbook-docs#58");
+
+    let run = fixture.run_with_gh("", &["context", "acme/cookbook-docs#60"]);
+
+    assert_eq!(
+        run.stderr,
+        "error: issue `acme/cookbook-docs#60` links to no node below its parent \
+         `acme/cookbook-docs#58`, which can't be read: can't read it on GitHub: \
+         Resource not accessible by integration\n"
+    );
+    assert_eq!((run.code, run.stdout.as_str()), (2, ""));
+}
+
+#[test]
+fn names_a_parent_in_another_repo_in_full() {
+    let fixture = cookbook("context-issue-other-repo", "acme/cookbook-docs#58");
+    let roadmap = GhIssue {
+        title: "Roadmap",
+        sub_issues: &["acme/cookbook-docs#58"],
+        ..GhIssue::default()
+    };
+    fixture.gh_issue_with("github.com", "acme/roadmap#1", &roadmap);
+    let filters = GhIssue {
+        title: "Search filters",
+        parent: Some("acme/roadmap#1"),
+        sub_issues: &["acme/cookbook-docs#60"],
+        ..GhIssue::default()
+    };
+    issue(&fixture, 58, filters);
+    let task = GhIssue {
+        title: "Cooking time",
+        parent: Some("acme/cookbook-docs#58"),
+        ..GhIssue::default()
+    };
+    issue(&fixture, 60, task);
+
+    let run = fixture.run_with_gh("", &["context", "acme/cookbook-docs#60"]);
+
+    let parents = "\n## Parent work\n\n\
+         - acme/roadmap#1 Roadmap (open, 0 of 1 done)\n  \
+           - #58 Search filters (open, 0 of 1 done)\n\n";
+    assert!(run.stdout.contains(parents), "{}", run.stdout);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+}
+
+#[test]
+fn ref_reads_the_issues_node_at_another_version() {
+    let fixture = cookbook("context-issue-ref", "");
+    hierarchy(&fixture, ["", ""]);
+    super::git(&fixture, &["init", "-q", "-b", "main"]);
+    super::git(&fixture, &["add", "-A"]);
+    super::git(&fixture, &["commit", "-q", "-m", "Add the cookbook"]);
+    let commit = super::git(&fixture, &["rev-parse", "--short", "HEAD"]);
+    let file = fixture.path("recipes/search/search.md");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("\"Search\"", "\"Search, edited\"")).unwrap();
+    let context = |more: &[&str]| {
+        let args = [&["context", "acme/cookbook-docs#60"], more].concat();
+        fixture.run_with_gh("", &args)
+    };
+
+    let edited = context(&[]);
+    let on_main = context(&["--ref", "main"]);
+
+    assert_eq!(
+        target(&edited.stdout),
+        "## Feature: Search, edited (fd-7c2e41, draft)"
+    );
+    assert_eq!(
+        target(&on_main.stdout),
+        "## Feature: Search (fd-7c2e41, draft)"
+    );
+    let header = format!("# Context: acme/cookbook-docs#60 (docs main @ {commit}, 2026-10-27)\n");
+    assert!(on_main.stdout.starts_with(&header), "{}", on_main.stdout);
+    assert_eq!((edited.code, on_main.code), (0, 0), "{}", on_main.stderr);
+}
