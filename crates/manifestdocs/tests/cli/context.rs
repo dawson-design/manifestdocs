@@ -312,6 +312,26 @@ fn prints_the_errors_of_a_broken_node_or_stops_on_a_bad_argument() {
 }
 
 #[test]
+fn reads_a_decision_id_as_a_path() {
+    let fixture = cookbook("context-decision-id", ENGINE);
+    fs::create_dir_all(fixture.path("docs/dc-0000002")).unwrap();
+    let cases = [
+        ("dc-0000001", "error: no file or folder `dc-0000001`\n"),
+        ("dc-00", "error: no file or folder `dc-00`\n"),
+        (
+            "dc-0000002",
+            "error: `dc-0000002` isn't a node file or node folder\n",
+        ),
+    ];
+    for (arg, expected) in cases {
+        let run = fixture.run("docs", &["context", arg]);
+
+        assert_eq!(run.stderr, expected, "{arg}");
+        assert_eq!(run.code, 2, "{arg}");
+    }
+}
+
+#[test]
 fn keeps_ten_percent_of_the_budget_as_headroom() {
     let fixture = cookbook("context-headroom", ENGINE);
     let full = fixture.run("docs", &["context", "fd-7c2e41"]);

@@ -9,7 +9,10 @@ use anyhow::{Context, Result, anyhow};
 use manifestdocs_core::finding::Finding;
 use manifestdocs_core::id::{NodeId, NodeIdPrefix};
 use manifestdocs_core::node::{Node, NodeStatus};
+use manifestdocs_core::record::{DecisionIdPrefix, read_records};
 use manifestdocs_core::tree::{Entry, NodeSelector, SelectError, Tree};
+
+mod record;
 
 use crate::files;
 use crate::locate::locate;
@@ -19,12 +22,20 @@ use crate::tree::path_in_tree;
 pub fn run(arg: &str) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let roots = locate(&cwd)?;
-    let tree = files::tree(&roots, &cwd)?;
+    let (tree, mut snapshot) = files::tree_and_snapshot(&roots, &cwd)?;
     let paths = Paths {
         tree_root: &roots.tree_root,
         cwd: &cwd,
     };
-    let entry = select_node(&tree, arg, &paths)?;
+    let selector = show_selector(&tree, arg, &paths)?;
+    if let NodeSelector::Decision(prefix) = &selector {
+        files::read_records(&mut snapshot, &roots, &tree.config, &cwd)?;
+        let records = read_records(&tree.config, &snapshot);
+        return record::run(&tree, &records, arg, prefix, &paths);
+    }
+    let entry = tree
+        .select(&selector)
+        .map_err(|error| select_error(arg, error, &paths))?;
     match &entry.node {
         Ok(node) => {
             write_stdout(&render(&tree, entry, node, &paths))?;
@@ -54,6 +65,18 @@ pub fn select_node<'a>(tree: &'a Tree, arg: &str, paths: &Paths) -> Result<&'a E
     let selector = selector(tree, arg, paths.cwd, paths.tree_root)?;
     tree.select(&selector)
         .map_err(|error| select_error(arg, error, paths))
+}
+
+// For `show` only, an argument that starts with `dc-` is always a decision ID, so a folder
+// with that name is `./dc-x`. Other commands read it as a path.
+fn show_selector(tree: &Tree, arg: &str, paths: &Paths) -> Result<NodeSelector> {
+    if !arg.starts_with("dc-") {
+        return selector(tree, arg, paths.cwd, paths.tree_root);
+    }
+    let prefix = DecisionIdPrefix::parse(arg).ok_or_else(|| {
+        anyhow!("`{arg}` isn't a decision ID: expected `dc-` and 4 to 7 lowercase hex characters")
+    })?;
+    Ok(NodeSelector::Decision(prefix))
 }
 
 // An argument that starts with `fd-` is always an ID, so a folder with that name is `./fd-x`.
@@ -119,6 +142,7 @@ fn header(tree: &Tree, entry: &Entry, node: &Node, paths: &Paths) -> String {
     out
 }
 
+/// A node's title and ID, or only the ID when no node has it.
 fn replacement(tree: &Tree, id: &NodeId) -> String {
     match tree.entries.values().find(|entry| entry.id == *id) {
         Some(entry) => format!("{} ({id})", tree.name(entry)),
