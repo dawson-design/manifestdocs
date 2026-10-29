@@ -18,8 +18,8 @@ summary: "The commands, and their text and JSON output."
 | `mfd check [path] [--strict] [--offline]` | Validate the tree that contains `path`, or the current folder; see [checks](../checks/checks.md). `--offline` skips the GitHub rules without calling `gh` | No |
 | `mfd work <id>` | Work items linked to a node and their sub-issues, with open or closed state | Yes |
 | `mfd stale` | Report open issues whose node changed after their `spec-ref` | Yes |
-| `mfd decide` | Write a decision record from a file or stdin; see [decision records](../decision-records/decision-records.md) | No |
-| `mfd decisions [id]` | List decision records for a node and its ancestors, or for the whole tree | No |
+| `mfd decide` | Write a decision record from a file or stdin; see [decision records](../decision-records/decision-records.md). It reads and writes the docs clone's working tree, and takes no `--ref` | No |
+| `mfd decisions [id] [--ref ref]` | List decision records for a node and its ancestors, or for the whole tree | No |
 | `mfd init [title]` | Create `manifestdocs.yaml` and a root node, named after the title in kebab case | No |
 
 Commands that need GitHub fail with a clear message when `gh` is missing or unauthenticated. All other commands still work.
@@ -55,4 +55,6 @@ With `--json`, every command prints one JSON object to stdout, in schema version
 | `tree` | `{ nodes: [{ id, title, status, file, parent }] }` in outline order, with `parent` an ID or `null` |
 | `show` | `{ id, title, status, summary, file, parent, repos, work, superseded_by, body, supporting_docs, findings }`, or a record's fields for a `dc-` ID |
 | `context` | `{ target, version, pieces: [{ kind, heading, path, text }], omitted: [{ path, tokens }], tokens, budget }` |
-| `decide`, `decisions`, `work`, `stale` | Set by each command's milestone, under these rules |
+| `decide` | `{ outcome, id, status, file, record, superseded: { id, file, record }, errors: [{ file, line, field, severity, code, message, fix }], warnings: [{ code, message }] }`. `outcome` is `written`, `dry_run`, `unchanged` or `invalid`. `record` is the text written, or that would be written on a dry run, or `null`. `superseded` is the record marked superseded, with its new text, or `null`. An error's `file` is `null` for stdin |
+| `decisions` | `{ records: [{ id, node, title, status, topic, date, supersedes, file }] }` grouped by node, with `node` the node whose `decisions/` folder holds the record |
+| `work`, `stale` | Set by each command's milestone, under these rules |

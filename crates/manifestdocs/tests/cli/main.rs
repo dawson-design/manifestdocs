@@ -2,6 +2,8 @@
 
 mod check;
 mod context;
+mod decide;
+mod decisions;
 mod docs_source;
 mod init;
 mod json;

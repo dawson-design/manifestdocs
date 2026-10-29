@@ -225,6 +225,24 @@ fn command(folder: &Path) -> Command {
     command
 }
 
+/// The branch, default branch, commits ahead of it and uncommitted changes of the clone
+/// holding `folder`, for `decide`'s warnings. `None` without git or a commit.
+pub fn clone_state(folder: &Path) -> Option<manifestdocs_core::decide::CloneState> {
+    git(folder, &["rev-parse", "--verify", "--quiet", "HEAD"])?;
+    let changes = git(folder, &["status", "--porcelain"])?;
+    let ahead = git(
+        folder,
+        &["rev-list", "--count", "refs/remotes/origin/HEAD..HEAD"],
+    );
+    Some(manifestdocs_core::decide::CloneState {
+        branch: git(folder, &["symbolic-ref", "--quiet", "--short", "HEAD"]),
+        default_branch: origin_head(folder)
+            .and_then(|head| head.strip_prefix("origin/").map(str::to_owned)),
+        ahead_of_default: ahead.is_some_and(|count| count != "0"),
+        uncommitted: !changes.is_empty(),
+    })
+}
+
 /// `git`'s trimmed output, or `None` when it fails or isn't installed.
 fn git(folder: &Path, args: &[&str]) -> Option<String> {
     let stdout = String::from_utf8(output(folder, args)?).ok()?;

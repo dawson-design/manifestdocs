@@ -135,6 +135,11 @@ pub fn show(tree: &Tree, entry: &Entry, tree_root: &Path, cwd: &Path) -> Result<
     print("show", data)
 }
 
+/// Prints `data` for a command that sets its own shape, such as `decide` and `decisions`.
+pub fn data(command: &str, data: impl Serialize) -> Result<()> {
+    print(command, data)
+}
+
 /// Prints the error that stopped `command`, and exits 2 as text output does.
 pub fn fail(command: &str, error: &anyhow::Error) -> ExitCode {
     print_failure(command, &format!("{error:#}"))

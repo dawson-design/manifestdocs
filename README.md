@@ -118,8 +118,38 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `context <id or path> [--budget n] [--out path]` | Prints a node's context for an agent, or writes it to a file |
 | `show <id or path> [--json]` | Prints one node with its parent and supporting docs. An ID prefix of 4 to 6 hex characters works too |
 | `check [path] [--json] [--offline]` | Validates frontmatter, IDs, links, anchors and node sizes, in the tree that contains `path` or the current folder. With a `github` block, it also checks linked issues through `gh`, unless `--offline` |
+| `decide --file <path or -> [--dry-run] [--unattended] [--out dir] [--json]` | Writes a decision record and prints its path; see [Record a decision](#record-a-decision) |
+| `decisions [id or path] [--json] [--ref ref]` | Lists decision records for a node and its ancestors, or for the whole tree |
 
 With `--json`, a command prints one JSON object for scripts, in the versioned schema in [the CLI spec](design/cli/cli.md#json-output), and exits with the same code as text. Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, or on warnings too with `--strict`, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
+
+## Record a decision
+
+Write the record without `id`, `date` or `status`, and pass it to `decide` with `--file`, or `--file -` for stdin:
+
+```markdown
+---
+node: fd-7c2e41
+title: "Search results show 20 recipes per page"
+topic: search-page-size
+decided_by: octocat
+---
+
+**Decision.** Search shows 20 recipes per page.
+
+**Why.** Readers rarely scroll past 20 results before they refine a search.
+```
+
+```console
+$ mfd decide --file record.md
+recipes/search/decisions/2026-10-28-search-page-size.md
+```
+
+`decide` fills in the ID, today's date and the status: `accepted` under `decisions.merge: review`, the default, and `proposed` under `merge: proposed` or with `--unattended`. It writes only the record, plus `status: superseded` in the record it supersedes, and warns when the docs clone has uncommitted changes or commits that aren't on its default branch. It reports every problem in the input with its line and a fix, and writes nothing until all are fixed. Running it again with the same node, topic and body prints the existing path; a different body on the same topic needs `supersedes`.
+
+`--dry-run` prints the record and its path without writing. `--unattended` writes to `.manifestdocs/decisions/` in the current repo, which ignores itself, for sandboxed runs whose docs mount is read-only. `--out <dir>` writes to another folder.
+
+`mfd decisions fd-7c2e41` lists the records for a node and its ancestors, one line each.
 
 ## Use a tree from a code repo
 
@@ -139,7 +169,7 @@ In a workspace folder that holds the code repos and a docs repo, put one beside 
 tree: cookbook-docs
 ```
 
-`check`, `tree` and `show` read the docs clone's working tree, so you see your own edits. From another repo, `context` reads the docs clone's default branch, `origin/HEAD`, so a clone left on a feature branch doesn't change what an agent reads. It never fetches, so it reads the clone as of its last `git fetch`, and when `origin/HEAD` isn't set, it prints the `git remote set-head` command that sets it. `tree`, `show`, `context` and `check` take `--ref <ref>` to read another branch, tag or commit.
+`check`, `tree`, `show` and `decide` read the docs clone's working tree, so you see your own edits. From another repo, `context` and `decisions` read the docs clone's default branch, `origin/HEAD`, so a clone left on a feature branch doesn't change what an agent reads. They never fetch, so they read the clone as of its last `git fetch`, and when `origin/HEAD` isn't set, they print the `git remote set-head` command that sets it. `tree`, `show`, `context`, `check` and `decisions` take `--ref <ref>` to read another branch, tag or commit.
 
 ## Develop
 

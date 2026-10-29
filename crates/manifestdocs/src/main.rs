@@ -1,5 +1,7 @@
 mod check;
 mod context;
+mod decide;
+mod decisions;
 mod files;
 mod gh;
 mod git;
@@ -86,6 +88,35 @@ enum Command {
         /// The project's title; the tree's name is the title in kebab case [default: this folder's name]
         title: Option<String>,
     },
+    /// Write a decision record from a file or stdin, filling in its ID, date and status, and
+    /// print its path
+    Decide {
+        /// The record in the on-disk format, without `id`, or `-` to read it from stdin
+        #[arg(long)]
+        file: String,
+        /// Print the record and its path without writing it
+        #[arg(long)]
+        dry_run: bool,
+        /// A factory run: write `proposed`, to .manifestdocs/decisions/ in the current repo
+        #[arg(long)]
+        unattended: bool,
+        /// The folder to write to [default: the node's decisions/ folder]
+        #[arg(long)]
+        out: Option<String>,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
+    },
+    /// List decision records for a node and its ancestors, or for the whole tree
+    Decisions {
+        /// A node ID or ID prefix (`fd-` and 4 to 6 hex characters), or a node file or folder
+        node: Option<String>,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
+        #[command(flatten)]
+        docs: DocsRef,
+    },
 }
 
 impl Command {
@@ -95,6 +126,8 @@ impl Command {
             Self::Check { json: true, .. } => Some("check"),
             Self::Tree { json: true, .. } => Some("tree"),
             Self::Show { json: true, .. } => Some("show"),
+            Self::Decide { json: true, .. } => Some("decide"),
+            Self::Decisions { json: true, .. } => Some("decisions"),
             _ => None,
         }
     }
@@ -155,6 +188,22 @@ fn main() -> ExitCode {
             docs,
         } => context::run(&node, budget, out.as_deref(), docs.reference.as_deref()),
         Command::Init { title } => init::run(title.as_deref()),
+        Command::Decide {
+            file,
+            dry_run,
+            unattended,
+            out,
+            json,
+        } => decide::run(&decide::Args {
+            file: &file,
+            dry_run,
+            unattended,
+            out: out.as_deref(),
+            json,
+        }),
+        Command::Decisions { node, json, docs } => {
+            decisions::run(node.as_deref(), json, docs.reference.as_deref())
+        }
     };
     result.unwrap_or_else(|error| match json {
         Some(command) => json::fail(command, &error),

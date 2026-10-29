@@ -70,7 +70,7 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 
 ## Write path
 
-`decide` writes only the file and prints its path. It never branches or commits, and it warns when the docs clone it writes to is off its default branch or has uncommitted changes.
+`decide` writes the record and prints its path. When the record has `supersedes`, it also changes the older record's `status` line to `superseded`, and prints that path too. A record that supersedes one from the same day gets the next free name, such as `2026-10-28-search-page-size-2.md`. It never branches or commits, and it warns when the docs clone it writes to has uncommitted changes, or commits that aren't on its default branch, `origin/HEAD`. A fresh branch from the default branch, such as the skill's worktree, gets no warning.
 
 | Setting | Interactive session | Sandboxed factory run |
 |---|---|---|
