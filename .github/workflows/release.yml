@@ -220,6 +220,15 @@ jobs:
     with:
       plan: ${{ needs.plan.outputs.val }}
     secrets: inherit
+
+  custom-release-tests:
+    needs:
+      - plan
+      - build-local-artifacts
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
   # Determines if we should publish/announce
   host:
     needs:
@@ -227,8 +236,9 @@ jobs:
       - build-local-artifacts
       - build-global-artifacts
       - custom-gh-extension-assets
+      - custom-release-tests
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.custom-gh-extension-assets.result == 'skipped' || needs.custom-gh-extension-assets.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.custom-gh-extension-assets.result == 'skipped' || needs.custom-gh-extension-assets.result == 'success') && (needs.custom-release-tests.result == 'skipped' || needs.custom-release-tests.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
