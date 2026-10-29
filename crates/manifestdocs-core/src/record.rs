@@ -93,6 +93,13 @@ impl DecisionId {
         (hex.len() == 7 && is_lowercase_hex(hex)).then(|| Self(text.to_owned()))
     }
 
+    /// A new ID from 4 random bytes, of which the first 7 hex characters are used. The I/O
+    /// side supplies the bytes, so this stays pure.
+    pub fn from_bytes(bytes: [u8; 4]) -> Self {
+        let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        Self(format!("dc-{}", &hex[..7]))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -656,6 +663,14 @@ mod tests {
         for text in ["2026-02-31", "2026-04-31", "2026-02-29", "2100-02-29"] {
             assert_eq!(Date::parse(text), None, "{text}");
         }
+    }
+
+    #[test]
+    fn formats_random_bytes_as_a_valid_decision_id() {
+        let id = DecisionId::from_bytes([0x3f, 0x1a, 0x8c, 0x2b]);
+
+        assert_eq!(id.as_str(), "dc-3f1a8c2");
+        assert_eq!(DecisionId::parse(id.as_str()), Some(id));
     }
 
     #[test]

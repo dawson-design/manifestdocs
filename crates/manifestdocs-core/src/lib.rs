@@ -3,6 +3,8 @@
 pub mod check;
 pub mod config;
 pub mod context;
+pub mod decide;
+pub mod decisions;
 pub mod finding;
 pub mod frontmatter;
 pub mod id;

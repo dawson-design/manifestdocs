@@ -356,3 +356,35 @@ pub fn node(id: &str, title: &str) -> String {
         "---\nid: {id}\ntitle: \"{title}\"\nstatus: draft\nsummary: \"{title} summary.\"\n---\n\n# {title}\n"
     )
 }
+
+impl Fixture {
+    /// Runs `manifestdocs` with `args` from `folder`, with `stdin` as its input and `env` set,
+    /// such as `MANIFESTDOCS_TEST_DATE` to pin the date `decide` writes.
+    pub fn run_with(&self, folder: &str, args: &[&str], stdin: &str, env: &[(&str, &str)]) -> Run {
+        use std::io::Write as _;
+        use std::process::Stdio;
+
+        let mut child = command(&self.root.join(folder), &self.root, args)
+            .envs(env.iter().copied())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("the binary runs");
+        let mut input = child.stdin.take().expect("stdin is piped");
+        // The binary may exit without reading its input, which closes the pipe.
+        let _ = input.write_all(stdin.as_bytes());
+        drop(input);
+        let output = child.wait_with_output().expect("the binary exits");
+        Run {
+            code: output.status.code().expect("the binary exits with a code"),
+            stdout: String::from_utf8(output.stdout).expect("stdout is UTF-8"),
+            stderr: String::from_utf8(output.stderr).expect("stderr is UTF-8"),
+        }
+    }
+
+    /// The text of `relative` inside the fixture.
+    pub fn read(&self, relative: &str) -> String {
+        fs::read_to_string(self.path(relative)).expect("read a fixture file")
+    }
+}

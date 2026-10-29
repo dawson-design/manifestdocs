@@ -7,7 +7,7 @@ use crate::node::NodeLocation;
 use crate::paths::{RepoPath, TreePath};
 
 /// A folder named this holds decision records, so it and everything under it is never a node.
-const RECORDS_FOLDER: &str = "decisions";
+pub(crate) const RECORDS_FOLDER: &str = "decisions";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layout {
