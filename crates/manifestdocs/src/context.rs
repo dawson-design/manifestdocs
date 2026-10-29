@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use manifestdocs_core::context::{Budget, DocsVersion, Request, context, docs_to_read};
+use manifestdocs_core::context::{
+    Budget, DocsVersion, Request, context, docs_to_read, predecessors_to_read, records_to_read,
+};
 use manifestdocs_core::paths::RepoPath;
 
 use crate::files::{self, ByDefault, Docs, DocsSource};
@@ -37,6 +39,11 @@ pub fn run(
     }
     let linked = docs_to_read(&tree, &snapshot, entry);
     files::read_linked_docs(&mut snapshot, &linked, &docs);
+    // Like linked docs, a record that isn't UTF-8 is skipped, and `check` reports it.
+    let records = records_to_read(&tree, &snapshot, entry);
+    files::read_linked_docs(&mut snapshot, &records, &docs);
+    let predecessors = predecessors_to_read(&tree, &snapshot, entry);
+    files::read_linked_docs(&mut snapshot, &predecessors, &docs);
     let shown = |path: &RepoPath| relative(&roots.repo_root.join(path.as_str()), &cwd);
     let text = context(&Request {
         tree: &tree,

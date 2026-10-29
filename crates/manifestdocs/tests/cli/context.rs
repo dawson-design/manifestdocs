@@ -3,6 +3,7 @@
 use std::fs;
 use std::process::Command;
 
+use crate::docs_source::{git as docs_git, workspace};
 use crate::support::{Fixture, Run, node};
 
 const SEARCH: &str = "---\nid: fd-7c2e41\ntitle: \"Search\"\nstatus: draft\nsummary: \"Finds recipes.\"\n---\n\n\
@@ -508,4 +509,628 @@ fn fits_any_budget_that_leaving_everything_out_would_fit() {
             assert!(used(budget) <= room, "budget {budget}");
         }
     }
+}
+
+/// A decision record on `node`, whose Why paragraph is `why` when it isn't empty.
+fn record_with_why(
+    id: &str,
+    node: &str,
+    title: &str,
+    status: &str,
+    date: &str,
+    why: &str,
+) -> String {
+    let why = match why {
+        "" => String::new(),
+        why => format!("**Why.** {why}\n\n"),
+    };
+    format!(
+        "---\nid: {id}\nnode: {node}\ntitle: \"{title}\"\nstatus: {status}\ntopic: t-{id}\ndate: {date}\n---\n\n\
+         **Decision.** {title}.\n\n{why}**Rejected.** Doing nothing.\n"
+    )
+}
+
+/// A decision record whose Why paragraph has two sentences, the first naming `title`.
+fn record(id: &str, node: &str, title: &str, status: &str, date: &str) -> String {
+    let why = format!("{title} helps readers.\nIt also helps agents.");
+    record_with_why(id, node, title, status, date, &why)
+}
+
+/// `text`, a record, with `supersedes: older` added to its frontmatter.
+fn superseding(text: &str, older: &str) -> String {
+    text.replacen("\n---\n", &format!("\nsupersedes: {older}\n---\n"), 1)
+}
+
+/// A tree in `docs/` with Search under Recipes under the root, and `records` added.
+fn decided(name: &str, records: &[(&str, &str)]) -> Fixture {
+    let root = node("fd-0a0001", "Cookbook");
+    let recipes = node("fd-0a0002", "Recipes");
+    let search = node("fd-7c2e41", "Search");
+    let mut files = vec![
+        ("docs/manifestdocs.yaml", "name: cookbook\n"),
+        ("docs/cookbook.md", root.as_str()),
+        ("docs/recipes/recipes.md", recipes.as_str()),
+        ("docs/recipes/search/search.md", search.as_str()),
+    ];
+    files.extend_from_slice(records);
+    Fixture::new(name, &files)
+}
+
+/// The `## Decisions` section, up to the next section or the end of the context.
+fn decisions(run: &Run) -> &str {
+    let Some((_, tail)) = run.stdout.split_once("\n## Decisions\n") else {
+        panic!("no decisions: {}{}", run.stdout, run.stderr);
+    };
+    let tail = tail.split("\n## ").next().unwrap();
+    tail.split("\nEstimated size: ").next().unwrap()
+}
+
+#[test]
+fn lists_the_accepted_and_proposed_decisions_of_the_node_and_its_ancestors() {
+    let github = record(
+        "dc-000000a",
+        "fd-0a0001",
+        "No GitHub writes",
+        "accepted",
+        "2026-10-01",
+    );
+    let units = record(
+        "dc-000000b",
+        "fd-0a0002",
+        "Metric units first",
+        "proposed",
+        "2026-10-02",
+    );
+    let page = record(
+        "dc-000000c",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-03",
+    );
+    let filters = record(
+        "dc-000000d",
+        "fd-7c2e41",
+        "Filter as picked",
+        "proposed",
+        "2026-10-04",
+    );
+    let fixture = decided(
+        "context-decisions",
+        &[
+            ("docs/decisions/2026-10-01-github.md", &github),
+            ("docs/recipes/decisions/2026-10-02-units.md", &units),
+            ("docs/recipes/search/decisions/2026-10-03-page.md", &page),
+            (
+                "docs/recipes/search/decisions/2026-10-04-filters.md",
+                &filters,
+            ),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    let (before, _) = estimate(&run);
+    assert_eq!(
+        before,
+        "# Context: fd-7c2e41 (docs not in git)\n\n\
+         ## Feature: Search (fd-7c2e41, draft)\nPath: recipes/search\n\n# Search\n\n\
+         ## Parent: Recipes (fd-0a0002, draft)\nPath: recipes\n\n# Recipes\n\n\
+         ## Project: Cookbook (fd-0a0001, draft)\n\n# Cookbook\n\n\
+         ## Decisions\n\n\
+         - dc-000000d (proposed): Filter as picked. Filter as picked helps readers.\n\
+         - dc-000000c (accepted): Show 20 per page. Show 20 per page helps readers.\n\
+         - dc-000000b (proposed): Metric units first. Metric units first helps readers.\n\
+         - dc-000000a (accepted): No GitHub writes. No GitHub writes helps readers.\n\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn leaves_out_superseded_and_rejected_decisions() {
+    let old = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Hide empty filters",
+        "superseded",
+        "2026-10-01",
+    );
+    let engine = record(
+        "dc-000000b",
+        "fd-0a0002",
+        "Use SQLite FTS",
+        "rejected",
+        "2026-10-02",
+    );
+    let fixture = decided(
+        "context-decisions-left-out",
+        &[
+            ("docs/recipes/search/decisions/2026-10-01-empty.md", &old),
+            ("docs/recipes/decisions/2026-10-02-engine.md", &engine),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert!(!run.stdout.contains("## Decisions"), "{}", run.stdout);
+    assert!(!run.stdout.contains("dc-00000"), "{}", run.stdout);
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn ends_a_superseding_decision_with_the_title_of_the_one_it_supersedes() {
+    let first = record(
+        "dc-0000001",
+        "fd-7c2e41",
+        "Hide empty filters",
+        "superseded",
+        "2026-10-01",
+    );
+    let second = record(
+        "dc-0000002",
+        "fd-7c2e41",
+        "Grey out empty filters",
+        "superseded",
+        "2026-10-02",
+    );
+    let third = record(
+        "dc-0000003",
+        "fd-7c2e41",
+        "Count each filter",
+        "accepted",
+        "2026-10-03",
+    );
+    let second = superseding(&second, "dc-0000001");
+    let third = superseding(&third, "dc-0000002");
+    let fixture = decided(
+        "context-decisions-supersedes",
+        &[
+            ("docs/recipes/search/decisions/2026-10-01-empty.md", &first),
+            ("docs/recipes/search/decisions/2026-10-02-empty.md", &second),
+            ("docs/recipes/search/decisions/2026-10-03-empty.md", &third),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-0000003 (accepted): Count each filter. Count each filter helps readers. \
+         Supersedes dc-0000002: Grey out empty filters\n"
+    );
+}
+
+#[test]
+fn shows_only_the_title_of_a_decision_with_no_why() {
+    let page = record_with_why(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-01",
+        "",
+    );
+    let fixture = decided(
+        "context-decisions-no-why",
+        &[("docs/recipes/search/decisions/2026-10-01-page.md", &page)],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): Show 20 per page.\n"
+    );
+}
+
+#[test]
+fn lists_each_nodes_decisions_newest_first() {
+    let a = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Middle",
+        "accepted",
+        "2026-10-02",
+    );
+    let b = record(
+        "dc-000000b",
+        "fd-7c2e41",
+        "Newest",
+        "accepted",
+        "2026-10-03",
+    );
+    let c = record(
+        "dc-000000c",
+        "fd-7c2e41",
+        "Oldest",
+        "accepted",
+        "2026-10-01",
+    );
+    let fixture = decided(
+        "context-decisions-newest-first",
+        &[
+            ("docs/recipes/search/decisions/a.md", &a),
+            ("docs/recipes/search/decisions/b.md", &b),
+            ("docs/recipes/search/decisions/c.md", &c),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    let ids: Vec<&str> = decisions(&run)
+        .lines()
+        .filter_map(|line| line.strip_prefix("- "))
+        .map(|line| line.split(' ').next().unwrap())
+        .collect();
+    assert_eq!(ids, ["dc-000000b", "dc-000000a", "dc-000000c"]);
+}
+
+#[test]
+fn trims_the_oldest_decisions_of_the_farthest_ancestor_first() {
+    // One long sentence, so a decision's line costs more than its entry in the omitted list.
+    let why = format!("{}.", "readers need it ".repeat(10).trim_end());
+    let records: Vec<(String, String)> = [
+        ("docs/decisions", "fd-0a0001", "a"),
+        ("docs/recipes/decisions", "fd-0a0002", "b"),
+        ("docs/recipes/search/decisions", "fd-7c2e41", "c"),
+    ]
+    .iter()
+    .flat_map(|(folder, node, letter)| {
+        [("1", "2026-10-01", "old"), ("2", "2026-10-02", "new")].map(|(n, date, name)| {
+            let id = format!("dc-00000{letter}{n}");
+            let text = record_with_why(&id, node, name, "accepted", date, &why);
+            (format!("{folder}/{date}-{name}.md"), text)
+        })
+    })
+    .collect();
+    let records: Vec<(&str, &str)> = records
+        .iter()
+        .map(|(path, text)| (path.as_str(), text.as_str()))
+        .collect();
+    let fixture = decided("context-decisions-budget", &records);
+    let full = fixture.run("docs", &["context", "fd-7c2e41"]);
+    let tokens: u32 = estimate(&full)
+        .1
+        .trim_end_matches(" tokens")
+        .parse()
+        .unwrap();
+
+    // Going down from a budget that fits everything, the contexts in which one and then two
+    // pieces are first left out.
+    let mut first: Vec<(Vec<String>, String)> = Vec::new();
+    for budget in (1..=tokens * 2).rev().step_by(5) {
+        let run = fixture.run(
+            "docs",
+            &["context", "fd-7c2e41", "--budget", &budget.to_string()],
+        );
+        let names: Vec<String> = omitted(&run).iter().map(|name| name.to_string()).collect();
+        if names.len() > first.len() {
+            first.push((names, run.stdout.clone()));
+        }
+        if first.len() == 2 {
+            break;
+        }
+    }
+
+    assert_eq!(first[0].0, ["decisions/2026-10-01-old.md"]);
+    assert_eq!(
+        first[1].0,
+        ["decisions/2026-10-02-new.md", "decisions/2026-10-01-old.md"]
+    );
+    for id in ["dc-00000b1", "dc-00000b2", "dc-00000c1", "dc-00000c2"] {
+        assert!(
+            first[1].1.contains(&format!("- {id} ")),
+            "{id}: {}",
+            first[1].1
+        );
+    }
+}
+
+/// From another repo, records come from `origin/HEAD`, like the rest of the context.
+#[test]
+fn reads_decisions_from_origin_head_through_a_pointer() {
+    let (fixture, _, _) = workspace("context-decisions-origin-head");
+    let write = |file: &str, id: &str, title: &str| {
+        let text = record(id, "fd-7c2e41", title, "accepted", "2026-10-01");
+        let path = fixture.path(&format!("work/docs/search/decisions/{file}"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    let docs = "work/docs";
+    write("2026-10-01-merged.md", "dc-000000a", "Merged");
+    docs_git(&fixture, docs, &["add", "-A"]);
+    docs_git(&fixture, docs, &["commit", "-q", "-m", "Record a decision"]);
+    docs_git(&fixture, docs, &["push", "-q", "origin", "feature/x:main"]);
+    docs_git(&fixture, docs, &["fetch", "-q", "origin"]);
+    write("2026-10-02-draft.md", "dc-000000b", "Uncommitted");
+
+    let run = fixture.run("work/web", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): Merged. Merged helps readers.\n"
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+}
+
+#[test]
+fn ref_reads_the_decisions_on_another_branch() {
+    let (fixture, _, _) = workspace("context-decisions-ref");
+    let text = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Branch",
+        "accepted",
+        "2026-10-01",
+    );
+    let path = fixture.path("work/docs/search/decisions/2026-10-01-branch.md");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+    let docs = "work/docs";
+    docs_git(&fixture, docs, &["add", "-A"]);
+    docs_git(&fixture, docs, &["commit", "-q", "-m", "Record a decision"]);
+
+    let on_branch = fixture.run("work/web", &["context", "fd-7c2e41", "--ref", "feature/x"]);
+    let merged = fixture.run("work/web", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&on_branch),
+        "\n- dc-000000a (accepted): Branch. Branch helps readers.\n"
+    );
+    assert!(!merged.stdout.contains("## Decisions"), "{}", merged.stdout);
+}
+
+#[test]
+fn shows_the_root_nodes_decisions_when_it_is_the_target() {
+    let github = record(
+        "dc-000000a",
+        "fd-0a0001",
+        "No GitHub writes",
+        "accepted",
+        "2026-10-01",
+    );
+    let units = record(
+        "dc-000000b",
+        "fd-0a0002",
+        "Metric units first",
+        "accepted",
+        "2026-10-02",
+    );
+    let fixture = decided(
+        "context-decisions-root",
+        &[
+            ("docs/decisions/2026-10-01-github.md", &github),
+            ("docs/recipes/decisions/2026-10-02-units.md", &units),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "."]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): No GitHub writes. No GitHub writes helps readers.\n"
+    );
+}
+
+#[test]
+fn leaves_out_the_decisions_of_children_and_siblings() {
+    let filters = node("fd-7c2e99", "Filters");
+    let import = node("fd-0a0003", "Import");
+    let page = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-01",
+    );
+    let child = record(
+        "dc-000000b",
+        "fd-7c2e99",
+        "Filter as picked",
+        "accepted",
+        "2026-10-02",
+    );
+    let sibling = record(
+        "dc-000000c",
+        "fd-0a0003",
+        "Import CSV first",
+        "accepted",
+        "2026-10-03",
+    );
+    let fixture = decided(
+        "context-decisions-relatives",
+        &[
+            ("docs/recipes/search/filters/filters.md", &filters),
+            ("docs/recipes/import/import.md", &import),
+            ("docs/recipes/search/decisions/2026-10-01-page.md", &page),
+            (
+                "docs/recipes/search/filters/decisions/2026-10-02-picked.md",
+                &child,
+            ),
+            ("docs/recipes/import/decisions/2026-10-03-csv.md", &sibling),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): Show 20 per page. Show 20 per page helps readers.\n"
+    );
+}
+
+#[test]
+fn ends_with_only_the_id_when_the_superseded_record_is_missing_or_broken() {
+    let import = node("fd-0a0003", "Import");
+    let missing = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Count each filter",
+        "accepted",
+        "2026-10-01",
+    );
+    let missing = superseding(&missing, "dc-0000009");
+    let broken = record(
+        "dc-000000b",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-02",
+    );
+    let broken = superseding(&broken, "dc-000000e");
+    let older = "---\nid: dc-000000e\nnode: fd-0a0003\nstatus: superseded\n---\n";
+    let fixture = decided(
+        "context-decisions-missing-predecessor",
+        &[
+            ("docs/recipes/import/import.md", &import),
+            (
+                "docs/recipes/search/decisions/2026-10-01-count.md",
+                &missing,
+            ),
+            ("docs/recipes/search/decisions/2026-10-02-page.md", &broken),
+            ("docs/recipes/import/decisions/2026-09-01-old.md", older),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000b (accepted): Show 20 per page. Show 20 per page helps readers. Supersedes dc-000000e\n\
+         - dc-000000a (accepted): Count each filter. Count each filter helps readers. Supersedes dc-0000009\n"
+    );
+}
+
+#[test]
+fn reads_a_superseded_record_from_another_node() {
+    let import = node("fd-0a0003", "Import");
+    let older = record(
+        "dc-000000f",
+        "fd-0a0003",
+        "Old import rule",
+        "superseded",
+        "2026-09-01",
+    );
+    let newer = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "New rule",
+        "accepted",
+        "2026-10-01",
+    );
+    let newer = superseding(&newer, "dc-000000f");
+    let fixture = decided(
+        "context-decisions-predecessor-elsewhere",
+        &[
+            ("docs/recipes/import/import.md", &import),
+            ("docs/recipes/import/decisions/2026-09-01-old.md", &older),
+            ("docs/recipes/search/decisions/2026-10-01-new.md", &newer),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): New rule. New rule helps readers. Supersedes dc-000000f: Old import rule\n"
+    );
+}
+
+#[test]
+fn lists_a_record_with_frontmatter_errors_by_its_id_or_path() {
+    let page = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-01",
+    );
+    let broken = "---\nid: dc-000000e\nnode: fd-7c2e41\nstatus: accepted\n---\n";
+    let no_id = "---\nnode: fd-7c2e41\ntitle: \"No ID\"\n---\n";
+    let fixture = decided(
+        "context-decisions-broken-record",
+        &[
+            ("docs/recipes/search/decisions/2026-10-01-page.md", &page),
+            ("docs/recipes/search/decisions/2026-10-02-broken.md", broken),
+            ("docs/recipes/search/decisions/2026-10-03-no-id.md", no_id),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): Show 20 per page. Show 20 per page helps readers.\n\
+         - dc-000000e (has problems): recipes/search/decisions/2026-10-02-broken.md\n\
+         - recipes/search/decisions/2026-10-03-no-id.md (has problems)\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn lists_the_decisions_of_an_ancestor_with_frontmatter_errors() {
+    let units = record(
+        "dc-000000b",
+        "fd-0a0002",
+        "Metric units first",
+        "accepted",
+        "2026-10-02",
+    );
+    let fixture = decided(
+        "context-decisions-broken-ancestor",
+        &[("docs/recipes/decisions/2026-10-02-units.md", &units)],
+    );
+    let broken = "---\nid: fd-0a0002\ntitle: Recipes\nstatus: draft\nsummary: \"Recipes.\"\n---\n";
+    fs::write(fixture.path("docs/recipes/recipes.md"), broken).unwrap();
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert!(
+        run.stdout
+            .contains("## Parent: recipes (fd-0a0002, has problems)"),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000b (accepted): Metric units first. Metric units first helps readers.\n"
+    );
+}
+
+#[test]
+fn skips_a_record_file_it_cant_read() {
+    let import = node("fd-0a0003", "Import");
+    let page = record(
+        "dc-000000a",
+        "fd-7c2e41",
+        "Show 20 per page",
+        "accepted",
+        "2026-10-01",
+    );
+    let fixture = decided(
+        "context-decisions-unreadable",
+        &[
+            ("docs/recipes/import/import.md", &import),
+            ("docs/recipes/search/decisions/2026-10-01-page.md", &page),
+        ],
+    );
+    for folder in [
+        "docs/recipes/search/decisions",
+        "docs/recipes/import/decisions",
+    ] {
+        fs::create_dir_all(fixture.path(folder)).unwrap();
+        fs::write(
+            fixture.path(&format!("{folder}/2026-10-02-bad.md")),
+            b"caf\xe9\n",
+        )
+        .unwrap();
+    }
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41"]);
+
+    assert_eq!(
+        decisions(&run),
+        "\n- dc-000000a (accepted): Show 20 per page. Show 20 per page helps readers.\n"
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
 }

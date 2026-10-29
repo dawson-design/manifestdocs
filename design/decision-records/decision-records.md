@@ -86,7 +86,7 @@ The personal factory can use `merge: proposed` for speed. A team whose changes n
 
 ## Read path
 
-Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out unless asked for. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
+Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out; `mfd decisions` lists them. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
 
 Each decision takes one line in `context`: its ID, status and title, and the first sentence of its **Why.** paragraph. When a record supersedes another, its line ends with the older record's ID and title, as `Supersedes dc-1a7f3b4: <title>`. The tool reads these from the older file, so nothing is stored twice. Only the immediate predecessor appears, and `mfd show <dc-id>` prints a record in full with the chain it supersedes. Each node's decisions go into the budget right after the node, newest first, so trimming drops the oldest decisions of the farthest ancestors first. A record's length doesn't change its cost in context, so a node can gather many decisions without crowding out its spec.
 
