@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use pulldown_cmark::{Event, Parser};
+
 use crate::finding::{Finding, Problem};
 use crate::id::NodeId;
 use crate::node::ParsedNode;
@@ -74,9 +76,9 @@ fn linked<'a>(
     listed.chain(named)
 }
 
-/// The most consecutive words `issue` shares with `spec`. A word is a run of letters, digits
-/// and apostrophes, compared without case, so punctuation, Markdown and line breaks don't
-/// count.
+/// The most consecutive words `issue` shares with `spec`, both read as the text their Markdown
+/// renders, so a link counts by its visible text. A word is a run of letters and digits, with
+/// any apostrophes inside it, compared without case.
 pub fn longest_shared_run(issue: &str, spec: &str) -> usize {
     let (issue, spec) = (words(issue), words(spec));
     // `run[j + 1]`: the shared run ending at the current issue word and `spec[j]`. Going
@@ -92,14 +94,28 @@ pub fn longest_shared_run(issue: &str, spec: &str) -> usize {
     longest
 }
 
-fn words(text: &str) -> Vec<String> {
-    let text = text.to_lowercase().replace('’', "'");
+fn words(markdown: &str) -> Vec<String> {
+    let text = visible_text(markdown).to_lowercase().replace('’', "'");
     let words = text.split(|c: char| !(c.is_alphanumeric() || c == '\''));
     let words = words.map(|word| word.trim_matches('\''));
     words
         .filter(|word| !word.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// The text `markdown` renders as, without link destinations or HTML. Every tag and line
+/// break adds a space, so text in separate blocks or cells doesn't run together.
+fn visible_text(markdown: &str) -> String {
+    let mut text = String::new();
+    for event in Parser::new(markdown) {
+        match event {
+            Event::Text(part) | Event::Code(part) => text.push_str(&part),
+            Event::Html(_) | Event::InlineHtml(_) => {}
+            _ => text.push(' '),
+        }
+    }
+    text
 }
 
 #[cfg(test)]
@@ -116,9 +132,17 @@ mod tests {
 
     #[test]
     fn ignores_case_punctuation_markdown_and_line_breaks() {
-        let spec = "Search finds recipes by [ingredient](rules.md), cuisine and `time`.";
-        let issue = "- **search** finds\r\nRECIPES by ingredient rules md cuisine; and time";
-        assert_eq!(longest_shared_run(issue, spec), 10);
+        let spec = "Search finds recipes by [ingredient](../rules/rules.md), cuisine and `time`.";
+        let issue = "- **search** finds\r\nRECIPES by ingredient; cuisine <br> and time";
+        assert_eq!(longest_shared_run(issue, spec), 8);
+    }
+
+    #[test]
+    fn reads_links_and_images_by_their_visible_text() {
+        let spec =
+            "a ![photo](img/photo.png) of <https://example.com> and [rules][r] here\n\n[r]: x.md";
+        let issue = "a photo of https://example.com and rules here";
+        assert_eq!(longest_shared_run(issue, spec), 9);
     }
 
     #[test]

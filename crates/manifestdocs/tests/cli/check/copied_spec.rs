@@ -12,17 +12,29 @@ fn copied(n: usize) -> String {
     words.join(" ")
 }
 
-/// A tree with a root node and `search/search.md` (`fd-000002`), whose `work` lists `work`.
+/// A node file whose `work` lists `work`, with `body` below a heading.
+fn spec_node(id: &str, title: &str, work: &str, body: &str) -> String {
+    format!(
+        "---\nid: {id}\ntitle: \"{title}\"\nstatus: draft\nsummary: \"{title}.\"\nwork: [{work}]\n---\n\n# {title}\n\n{body}\n"
+    )
+}
+
+/// A tree with a root node and `search/search.md` (`fd-000002`), whose `work` lists `work`
+/// and whose body is `SPEC`.
 fn tree(name: &str, config: &str, work: &str) -> Fixture {
-    let search = format!(
-        "---\nid: fd-000002\ntitle: \"Search\"\nstatus: draft\nsummary: \"Recipe search.\"\nwork: [{work}]\n---\n\n# Search\n\n{SPEC}\n"
-    );
+    tree_with_body(name, config, work, SPEC)
+}
+
+fn tree_with_body(name: &str, config: &str, work: &str, body: &str) -> Fixture {
     Fixture::new(
         name,
         &[
             ("manifestdocs.yaml", config),
             ("demo.md", &node("fd-000001", "Demo")),
-            ("search/search.md", &search),
+            (
+                "search/search.md",
+                &spec_node("fd-000002", "Search", work, body),
+            ),
         ],
     )
 }
@@ -119,4 +131,51 @@ fn offline_skips_the_copied_text_rule() {
 
     assert_eq!(run.stdout, "2 nodes: no problems\n");
     assert_eq!(fixture.gh_calls(), Vec::<String>::new());
+}
+
+#[test]
+fn reads_a_link_in_the_nodes_text_as_its_visible_text() {
+    let body = SPEC.replace("by rating,", "by [rating](../demo.md#demo),");
+    let fixture = tree_with_body("copied-link", ON, "", &body);
+    let issue = format!("feature: fd-000002\n\n{}\n", copied(68));
+    fixture.gh_search("github.com", "acme/cookbook-docs", &[(7, &issue)]);
+
+    let run = fixture.run_with_gh("", &["check"]);
+
+    assert_eq!(run.stdout, warning("acme/cookbook-docs#7", 68));
+}
+
+#[test]
+fn warns_on_each_node_an_issue_copies_from() {
+    let fixture = tree("copied-two-nodes", ON, "acme/cookbook-docs#7");
+    let ranking = spec_node("fd-000003", "Ranking", "", SPEC);
+    std::fs::create_dir_all(fixture.path("ranking")).expect("create a folder");
+    std::fs::write(fixture.path("ranking/ranking.md"), ranking).expect("write a node");
+    let body = format!("feature: fd-000003\n\n{}\n", copied(60));
+    fixture.gh_issue_with_body("github.com", "acme/cookbook-docs#7", &body);
+    fixture.gh_search("github.com", "acme/cookbook-docs", &[(7, &body)]);
+
+    let run = fixture.run_with_gh("", &["check"]);
+
+    let message = "warning: issue `acme/cookbook-docs#7` copies 60 words in a row from this node; link to the node instead";
+    assert_eq!(
+        run.stdout,
+        format!(
+            "ranking/ranking.md: {message}\nsearch/search.md: {message}\n\n3 nodes: 2 warnings\n"
+        )
+    );
+}
+
+#[test]
+fn only_warns_about_the_unknown_node_a_copying_issue_names() {
+    let fixture = tree("copied-unknown-node", ON, "");
+    let body = format!("feature: fd-abcdef\n\n{}\n", copied(68));
+    fixture.gh_search("github.com", "acme/cookbook-docs", &[(7, &body)]);
+
+    let run = fixture.run_with_gh("", &["check"]);
+
+    assert_eq!(
+        run.stdout,
+        "manifestdocs.yaml: warning: issue `acme/cookbook-docs#7` has `feature: fd-abcdef`, which isn't a node in this tree\n\n2 nodes: 1 warning\n"
+    );
 }
