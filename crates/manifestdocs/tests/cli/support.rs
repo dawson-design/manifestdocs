@@ -73,6 +73,14 @@ impl Fixture {
         self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
     }
 
+    /// Has the fake `gh` know `issue` (`owner/name#number`) on `host` as an open issue with
+    /// `body`.
+    pub fn gh_issue_with_body(&self, host: &str, issue: &str, body: &str) {
+        let (repo, number) = issue.split_once('#').expect("an issue reference");
+        let json = format!(r#"{{"number":{number},"body":{}}}"#, json(body));
+        self.write_gh(&format!("issues/{host}/{repo}/{number}.json"), &json);
+    }
+
     /// Has the fake `gh` know `issue` (`owner/name#number`) on `host` with `details`. Like
     /// GitHub, it answers with at most 100 sub-issues, and pages through the rest 100 at a
     /// time after the cursors `p1`, `p2` and so on.

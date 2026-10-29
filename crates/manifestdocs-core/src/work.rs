@@ -9,6 +9,7 @@ use pulldown_cmark::{Event, Parser, Tag};
 
 use crate::check::{Report, Snapshot, read_node};
 use crate::config::{self, TreeConfig};
+use crate::copied::{NodeBody, copied_spec_findings, node_bodies};
 use crate::finding::{Field, Finding, Problem};
 use crate::id::NodeId;
 use crate::layout::layout;
@@ -81,6 +82,8 @@ pub struct WorkLinks {
     pub searched_repos: BTreeSet<RepoRef>,
     /// Every node ID in the tree, including those of nodes with frontmatter errors.
     pub node_ids: BTreeSet<NodeId>,
+    /// The nodes' bodies, for the copied-spec rule. Empty unless `check_copied_spec` is on.
+    pub bodies: Vec<NodeBody>,
 }
 
 /// An issue a search found, with its body.
@@ -97,6 +100,8 @@ pub struct GitHubAnswers {
     pub not_found: BTreeSet<IssueRef>,
     /// The issues the searches of `searched_repos` found.
     pub searched: Vec<IssueBody>,
+    /// The bodies of the issues in `work`, read only for the copied-spec rule.
+    pub work_bodies: Vec<IssueBody>,
 }
 
 /// What the GitHub rules ask `gh` about. `None` when they don't apply: the tree has no
@@ -119,6 +124,10 @@ pub fn work_links(config: &TreeConfig, snapshot: &Snapshot) -> Option<WorkLinks>
             .iter()
             .filter_map(|parsed| parsed.id.clone())
             .collect(),
+        bodies: match github.check_copied_spec {
+            true => node_bodies(&nodes),
+            false => Vec::new(),
+        },
     })
 }
 
@@ -146,7 +155,8 @@ fn node_work_items(parsed: &ParsedNode) -> Vec<WorkItem> {
 
 /// `report` with the GitHub rules' findings: an error for each work item `gh` can't read,
 /// and a warning on `manifestdocs.yaml` for each searched issue whose `feature:` line is
-/// malformed or names a node that isn't in the tree.
+/// malformed or names a node that isn't in the tree. With `check_copied_spec`, also a warning on
+/// a node for each linked issue that copies its text.
 pub fn with_github_findings(report: Report, links: &WorkLinks, answers: &GitHubAnswers) -> Report {
     let missing = links
         .work
@@ -160,6 +170,7 @@ pub fn with_github_findings(report: Report, links: &WorkLinks, answers: &GitHubA
     let mut findings = report.findings;
     findings.extend(missing);
     findings.extend(feature_findings(&links.node_ids, &answers.searched));
+    findings.extend(copied_spec_findings(links, answers));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report { findings, ..report }
 }

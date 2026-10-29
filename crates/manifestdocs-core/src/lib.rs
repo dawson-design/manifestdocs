@@ -3,6 +3,7 @@
 pub mod check;
 pub mod config;
 pub mod context;
+pub mod copied;
 pub mod decide;
 pub mod decisions;
 pub mod finding;
