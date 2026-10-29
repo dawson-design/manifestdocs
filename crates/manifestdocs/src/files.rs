@@ -9,6 +9,7 @@ use ignore::{DirEntry, WalkBuilder};
 use manifestdocs_core::check::{Snapshot, markdown_to_read, outside_anchor_targets};
 use manifestdocs_core::config::{self, TreeConfig};
 use manifestdocs_core::paths::RepoPath;
+use manifestdocs_core::record::records_to_read;
 use manifestdocs_core::tree::{Tree, node_files_to_read, read_tree};
 
 use crate::locate::Roots;
@@ -79,6 +80,18 @@ pub fn read_anchor_targets(
 ) -> Result<()> {
     let outside = outside_anchor_targets(config, snapshot);
     read_into(snapshot, outside, &roots.repo_root, cwd)
+}
+
+/// Reads the tree's decision records into `snapshot`, so `show` can find a record and the
+/// chain it supersedes.
+pub fn read_records(
+    snapshot: &mut Snapshot,
+    roots: &Roots,
+    config: &TreeConfig,
+    cwd: &Path,
+) -> Result<()> {
+    let records = records_to_read(config, &snapshot.tree_root, &snapshot.paths);
+    read_into(snapshot, records, &roots.repo_root, cwd)
 }
 
 fn read_into(

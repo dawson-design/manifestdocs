@@ -156,3 +156,147 @@ fn stops_when_the_argument_names_no_single_node() {
         assert_eq!(run.code, 2, "{node}");
     }
 }
+
+/// A Search node with a chain of three page-size records, a record whose predecessor is
+/// missing, a record that supersedes itself, and a record whose frontmatter is broken.
+fn records(name: &str) -> Fixture {
+    let root = node("fd-0a0001", "Cookbook");
+    let search = node("fd-7c2e41", "Search");
+    let newest = "---\nid: dc-3f1a8c2\nnode: fd-7c2e41\ntitle: \"Show 20 recipes per page\"\nstatus: accepted\ntopic: page-size\ndecided_by: octocat\ndate: 2026-10-28\nsource: [example-org/cookbook-web#212]\napplies_to: [example-org/cookbook-web:src/search/page.ts]\nsupersedes: dc-2b8e4c5\n---\n\n**Decision.** Show 20 recipes per page.\n\n**Why.** Readers rarely scroll past 20.\n";
+    let middle = "---\nid: dc-2b8e4c5\nnode: fd-7c2e41\ntitle: \"Show 50 recipes per page\"\nstatus: superseded\ntopic: page-size\ndate: 2026-10-14\nsupersedes: dc-1a7f3b4\n---\n\n**Decision.** Show 50 recipes per page.\n";
+    let oldest = "---\nid: dc-1a7f3b4\nnode: fd-7c2e41\ntitle: \"Show 10 recipes per page\"\nstatus: superseded\ntopic: page-size\ndate: 2026-10-01\n---\n\n**Decision.** Show 10 recipes per page.\n";
+    let orphan = "---\nid: dc-3f1a999\nnode: fd-7c2e41\ntitle: \"Rank by rating\"\nstatus: proposed\ntopic: ranking\ndate: 2026-10-29\nsupersedes: dc-00000ff\n---\n";
+    let broken = "---\nid: dc-4c4c4c4\nnode: fd-7c2e41\ntitle: Broken\nstatus: final\ntopic: broken\ndate: 2026-10-30\n---\n";
+    let looped = "---\nid: dc-5e1f5e1\nnode: fd-7c2e41\ntitle: \"Cache results\"\nstatus: accepted\ntopic: cache\ndate: 2026-10-31\nsupersedes: dc-5e1f5e1\n---\n\n**Decision.** Cache results.\n";
+    Fixture::new(
+        name,
+        &[
+            ("manifestdocs.yaml", "name: cookbook\n"),
+            ("cookbook.md", &root),
+            ("search/search.md", &search),
+            ("search/decisions/2026-10-28-page-size.md", newest),
+            ("search/decisions/2026-10-14-page-size.md", middle),
+            ("search/decisions/2026-10-01-page-size.md", oldest),
+            ("search/decisions/2026-10-29-ranking.md", orphan),
+            ("search/decisions/2026-10-30-broken.md", broken),
+            ("search/decisions/2026-10-31-cache.md", looped),
+        ],
+    )
+}
+
+#[test]
+fn shows_a_record_that_supersedes_itself_once() {
+    let fixture = records("show-record-self");
+
+    let run = fixture.run("", &["show", "dc-5e1f"]);
+
+    assert_eq!(
+        run.stdout,
+        "Cache results (dc-5e1f5e1, accepted)\n\
+         File: search/decisions/2026-10-31-cache.md\n\
+         Node: Search (fd-7c2e41)\n\
+         Topic: cache\n\
+         Date: 2026-10-31\n\
+         Supersedes: Cache results (dc-5e1f5e1)\n\
+         \n\
+         **Decision.** Cache results.\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn shows_a_record_by_id_or_prefix_with_the_chain_it_supersedes() {
+    let fixture = records("show-record-chain");
+    let expected = "Show 20 recipes per page (dc-3f1a8c2, accepted)\n\
+                    File: search/decisions/2026-10-28-page-size.md\n\
+                    Node: Search (fd-7c2e41)\n\
+                    Topic: page-size\n\
+                    Date: 2026-10-28\n\
+                    Decided by: octocat\n\
+                    Source: example-org/cookbook-web#212\n\
+                    Applies to: example-org/cookbook-web:src/search/page.ts\n\
+                    Supersedes: Show 50 recipes per page (dc-2b8e4c5)\n\
+                    \n\
+                    **Decision.** Show 20 recipes per page.\n\
+                    \n\
+                    **Why.** Readers rarely scroll past 20.\n\
+                    \n\
+                    Show 50 recipes per page (dc-2b8e4c5, superseded)\n\
+                    File: search/decisions/2026-10-14-page-size.md\n\
+                    Node: Search (fd-7c2e41)\n\
+                    Topic: page-size\n\
+                    Date: 2026-10-14\n\
+                    Supersedes: Show 10 recipes per page (dc-1a7f3b4)\n\
+                    \n\
+                    **Decision.** Show 50 recipes per page.\n\
+                    \n\
+                    Show 10 recipes per page (dc-1a7f3b4, superseded)\n\
+                    File: search/decisions/2026-10-01-page-size.md\n\
+                    Node: Search (fd-7c2e41)\n\
+                    Topic: page-size\n\
+                    Date: 2026-10-01\n\
+                    \n\
+                    **Decision.** Show 10 recipes per page.\n";
+
+    for id in ["dc-3f1a8c2", "dc-3f1a8"] {
+        let run = fixture.run("", &["show", id]);
+
+        assert_eq!(run.stdout, expected, "{id}");
+        assert_eq!(run.code, 0, "{id}");
+    }
+}
+
+#[test]
+fn shows_a_record_whose_predecessor_is_missing_by_id_only() {
+    let fixture = records("show-record-orphan");
+
+    let run = fixture.run("search", &["show", "dc-3f1a9"]);
+
+    assert_eq!(
+        run.stdout,
+        "Rank by rating (dc-3f1a999, proposed)\n\
+         File: decisions/2026-10-29-ranking.md\n\
+         Node: Search (fd-7c2e41)\n\
+         Topic: ranking\n\
+         Date: 2026-10-29\n\
+         Supersedes: dc-00000ff\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn prints_the_errors_of_a_record_whose_frontmatter_is_broken() {
+    let fixture = records("show-record-broken");
+
+    let run = fixture.run("", &["show", "dc-4c4c"]);
+
+    assert_eq!(
+        run.stdout,
+        "search/decisions/2026-10-30-broken.md:4: error: `title` must be double-quoted\n\
+         search/decisions/2026-10-30-broken.md:5: error: status `final` isn't a record status: expected `proposed`, `accepted`, `superseded` or `rejected`\n"
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn stops_when_the_argument_names_no_single_record() {
+    let fixture = records("show-record-none");
+    let cases = [
+        (
+            "dc-3f1a",
+            "error: `dc-3f1a` matches 2 decision records:\n  dc-3f1a8c2  search/decisions/2026-10-28-page-size.md\n  dc-3f1a999  search/decisions/2026-10-29-ranking.md\n",
+        ),
+        ("dc-ffff", "error: no decision record `dc-ffff`\n"),
+        (
+            "dc-3f1",
+            "error: `dc-3f1` isn't a decision ID: expected `dc-` and 4 to 7 lowercase hex characters\n",
+        ),
+    ];
+    for (id, expected) in cases {
+        let run = fixture.run("", &["show", id]);
+
+        assert_eq!(run.stderr, expected, "{id}");
+        assert_eq!(run.stdout, "", "{id}");
+        assert_eq!(run.code, 2, "{id}");
+    }
+}
