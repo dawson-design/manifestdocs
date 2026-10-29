@@ -101,13 +101,17 @@ fn push_line(tree: &Tree, item: &WorkEntry, above: Option<(&RepoRef, usize)>, ou
         });
     let (Some(own), Ok(issue)) = (item.reference, item.issue) else {
         let why = item.issue.err().map_or(String::new(), reason);
-        let _ = writeln!(out, "{indent}- {reference}: {why}");
+        match item.issue {
+            Err(Unreadable::Unlisted { .. }) => writeln!(out, "{indent}- {why}"),
+            _ => writeln!(out, "{indent}- {reference}: {why}"),
+        }
+        .unwrap_or_default();
         return;
     };
     let mut notes: Vec<String> = issue.issue_type.iter().cloned().collect();
     notes.push(state(issue.state).to_owned());
-    if let (Some(done), false) = (item.done, issue.sub_issues.is_empty()) {
-        notes.push(format!("{done} of {} done", issue.sub_issues.len()));
+    if let (Some(done), Some(total @ 1..)) = (item.done, item.total) {
+        notes.push(format!("{done} of {total} done"));
     }
     if above.is_none() && !item.parents.is_empty() {
         let chain = item.parents.iter().rev();
@@ -144,6 +148,9 @@ pub fn reason(unreadable: &Unreadable) -> String {
     match unreadable {
         Unreadable::NotFound => "not an issue you can read on GitHub".to_owned(),
         Unreadable::Failed(message) => format!("can't read it on GitHub: {message}"),
+        Unreadable::Unlisted { after } => {
+            format!("sub-issues past {after} couldn't be read, since GitHub repeated a page cursor")
+        }
     }
 }
 

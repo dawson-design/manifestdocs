@@ -225,6 +225,9 @@ pub enum Unreadable {
     NotFound,
     /// GitHub's message, such as for an issue or repo the token can't access.
     Failed(String),
+    /// GitHub stopped listing an issue's sub-issues after `after` of them by repeating a page
+    /// cursor, so the rest couldn't be read.
+    Unlisted { after: usize },
 }
 
 /// An issue reference compared without case, as GitHub compares owner and repo names.
@@ -256,9 +259,10 @@ pub struct WorkEntry<'a> {
     pub issue: Result<&'a Issue, &'a Unreadable>,
     /// The issue's parents, nearest first, up to the top.
     pub parents: Vec<&'a IssueRef>,
-    /// How many of the issue's sub-issues are closed. `None` when a deeper node takes them, so
-    /// they weren't read.
+    /// How many of the issue's sub-issues are closed, and how many GitHub listed. `None` when a
+    /// deeper node takes them, so they weren't read.
     pub done: Option<usize>,
+    pub total: Option<usize>,
     /// A deeper node that lists this sub-issue in its own `work`, which takes the issue's
     /// sub-issues.
     pub listed_by: Option<&'a Entry>,
@@ -357,6 +361,8 @@ impl<'a> Walk<'a> {
         let done = listed_by
             .is_none()
             .then(|| subs.iter().filter(|sub| self.closed(sub)).count());
+        let listed = subs.iter().filter(|sub| !is_unlisted(sub)).count();
+        let total = listed_by.is_none().then_some(listed);
         let mut path = above.to_vec();
         path.push(key);
         let chain = |parents: &[&'a IssueRef]| {
@@ -375,6 +381,7 @@ impl<'a> Walk<'a> {
             issue,
             parents: parents.clone(),
             done,
+            total,
             listed_by,
             sub_issues: sub_issues.collect(),
         }
@@ -412,12 +419,18 @@ impl<'a> Walk<'a> {
     }
 }
 
+/// The mark for sub-issues GitHub stopped listing, which isn't a sub-issue to count.
+fn is_unlisted(sub: &SubIssue) -> bool {
+    matches!(sub, SubIssue::Unreadable(Unreadable::Unlisted { .. }))
+}
+
 fn unreadable_sub_issue<'a>(why: &'a Unreadable, parents: Vec<&'a IssueRef>) -> WorkEntry<'a> {
     WorkEntry {
         reference: None,
         issue: Err(why),
         parents,
         done: None,
+        total: None,
         listed_by: None,
         sub_issues: Vec::new(),
     }

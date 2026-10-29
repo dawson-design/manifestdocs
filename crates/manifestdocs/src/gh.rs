@@ -130,6 +130,7 @@ pub fn search_issues(host: &Host, repo: &RepoRef) -> Result<SearchResults, GhErr
     let q = format!("repo:{repo} is:issue in:body \"feature: fd-\" sort:created-asc");
     let mut results = SearchResults::default();
     let mut cursor: Option<String> = None;
+    let mut seen = BTreeSet::new();
     loop {
         let mut fields = vec![("query", SEARCH_QUERY), ("q", q.as_str())];
         fields.extend(cursor.as_deref().map(|cursor| ("cursor", cursor)));
@@ -141,8 +142,15 @@ pub fn search_issues(host: &Host, repo: &RepoRef) -> Result<SearchResults, GhErr
         results.total = page.get("issueCount").and_then(Value::as_u64).unwrap_or(0);
         results.issues.extend(issue_bodies(repo, nodes));
         cursor = next_page(page);
-        if cursor.is_none() {
-            return Ok(results);
+        match &cursor {
+            None => return Ok(results),
+            // A repeated cursor would read the same page forever.
+            Some(next) if !seen.insert(next.clone()) => {
+                return Err(GhError::Failed(format!(
+                    "GitHub repeated the page cursor `{next}`"
+                )));
+            }
+            Some(_) => {}
         }
     }
 }
@@ -199,7 +207,7 @@ pub fn fetch_hierarchy(
     while !level.is_empty() {
         let mut next = Vec::new();
         for (repo, numbers) in by_repo(&level, |key| fetched.contains_key(key)) {
-            for (reference, issue) in fetch_issues(host, &repo, &numbers)? {
+            for (reference, issue) in fetch_issues(host, &repo, &numbers, takeovers)? {
                 let key = IssueKey::from(&reference);
                 if let (Ok(issue), false) = (&issue, takeovers.contains_key(&key)) {
                     next.extend(issue.sub_issues.iter().filter_map(|sub| match sub {
@@ -283,6 +291,7 @@ fn fetch_issues(
     host: &Host,
     repo: &RepoRef,
     numbers: &[u64],
+    takeovers: &Takeovers,
 ) -> Result<Vec<(IssueRef, IssueOrWhy)>, GhError> {
     let mut issues = Vec::new();
     for batch in numbers.chunks(BATCH) {
@@ -291,7 +300,11 @@ fn fetch_issues(
         let response = graphql(host, &repo_fields(&query, repo))?;
         let read = |value: &Value, alias: &str| read_issue(value, alias, repo, &response);
         for (number, answer) in read_aliases(&response, batch, read).map_err(GhError::Failed)? {
+            let taken = issue_ref(repo, number)
+                .is_some_and(|issue| takeovers.contains_key(&IssueKey::from(&issue)));
             let issue = match answer {
+                // A deeper node takes its sub-issues, so only its first fetch is kept.
+                Answer::Found(read) if taken => Ok(read.0),
                 Answer::Found(read) => Ok(all_sub_issues(host, repo, number, read)?),
                 Answer::NotFound => Err(Unreadable::NotFound),
                 Answer::Failed(detail) => Err(Unreadable::Failed(detail)),
@@ -306,8 +319,13 @@ fn fetch_issues(
 fn all_sub_issues(host: &Host, repo: &RepoRef, number: u64, read: Read) -> Result<Issue, GhError> {
     let Read(mut issue, cursor) = read;
     if let Some(cursor) = cursor {
-        let more = more_sub_issues(host, repo, number, cursor)?;
+        let (more, repeated) = more_sub_issues(host, repo, number, cursor)?;
         issue.sub_issues.extend(more);
+        if repeated {
+            let after = issue.sub_issues.len();
+            let unlisted = Unreadable::Unlisted { after };
+            issue.sub_issues.push(SubIssue::Unreadable(unlisted));
+        }
     }
     Ok(issue)
 }
@@ -436,14 +454,14 @@ fn issue_ref(repo: &RepoRef, number: u64) -> Option<IssueRef> {
     IssueRef::parse(&format!("{repo}#{number}"))
 }
 
-/// The rest of an issue's sub-issues, which GitHub returns 100 at a time, from `cursor` on.
-/// It stops if GitHub repeats a cursor, so a bad answer can't loop.
+/// The rest of an issue's sub-issues, which GitHub returns 100 at a time, from `cursor` on,
+/// and whether it stopped early because GitHub repeated a cursor, which would loop.
 fn more_sub_issues(
     host: &Host,
     repo: &RepoRef,
     number: u64,
     cursor: String,
-) -> Result<Vec<SubIssue>, GhError> {
+) -> Result<(Vec<SubIssue>, bool), GhError> {
     let query = format!(
         "query($owner: String!, $name: String!, $cursor: String!) {{ repository(owner: $owner, name: $name) {{ \
          i{number}: issue(number: {number}) {{ subIssues(first: 100, after: $cursor) {{ \
@@ -464,9 +482,15 @@ fn more_sub_issues(
         let response = graphql(host, &fields)?;
         let page = sub_issue_page(&response, number).map_err(GhError::Failed)?;
         sub_issues.extend(listed_sub_issues(page, &response, &nodes));
-        cursor = next_page(page).filter(|next| seen.insert(next.clone()));
+        cursor = next_page(page);
+        if cursor
+            .as_ref()
+            .is_some_and(|next| !seen.insert(next.clone()))
+        {
+            return Ok((sub_issues, true));
+        }
     }
-    Ok(sub_issues)
+    Ok((sub_issues, false))
 }
 
 // A page with no sub-issues to read fails, since its sub-issues can't be counted. An error
@@ -505,10 +529,17 @@ fn graphql(host: &Host, fields: &[(&str, &str)]) -> Result<Value, GhError> {
     if output.status.code() == Some(AUTH_REQUIRED) || stderr.contains("HTTP 401") {
         return Err(GhError::Unauthenticated { host: host.clone() });
     }
-    serde_json::from_slice(&output.stdout).map_err(|_| match stderr.is_empty() {
+    let failed = || match stderr.is_empty() {
         true => GhError::Failed(format!("`gh` exited with {}", output.status)),
-        false => GhError::Failed(stderr),
-    })
+        false => GhError::Failed(stderr.clone()),
+    };
+    let response: Value = serde_json::from_slice(&output.stdout).map_err(|_| failed())?;
+    // A failure without GraphQL errors, such as an HTTP 403 rate limit or a 502, has its
+    // reason only in `gh`'s message.
+    if !output.status.success() && response.get("errors").is_none() {
+        return Err(failed());
+    }
+    Ok(response)
 }
 
 impl fmt::Display for GhError {

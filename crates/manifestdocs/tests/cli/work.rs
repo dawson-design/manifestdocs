@@ -643,10 +643,11 @@ fn prints_work_as_json() {
             "sub_issues": [],
         })
     };
-    // Search takes #59, so its sub-issues aren't read and its done count is unknown.
+    // Search takes #59, so its sub-issues aren't read and its counts are unknown.
     let mut search = found("acme/cookbook-docs#59", "Search", "open", 0, 1);
     search["listed_by"] = json!("fd-000003");
     search["sub_issues_done"] = json!(null);
+    search["sub_issues_total"] = json!(null);
     assert_eq!(
         output,
         json!({
@@ -1133,5 +1134,222 @@ fn reads_the_ref_given() {
         main.stdout, "Feature (fd-000002, draft)\n- acme/cookbook-docs#41 Issue 41 (open)\n",
         "{}",
         main.stderr
+    );
+}
+
+#[test]
+fn reads_only_the_first_fetch_of_a_taken_over_issue() {
+    let fixture = Fixture::new(
+        "work-taken-over-pages",
+        &[
+            ("manifestdocs.yaml", GITHUB),
+            ("demo.md", &node("fd-000001", "Demo")),
+            (
+                "recipes/recipes.md",
+                &feature("fd-000002", "Recipes", "acme/cookbook-docs#41"),
+            ),
+            (
+                "recipes/search/search.md",
+                &feature("fd-000003", "Search", "acme/cookbook-docs#58"),
+            ),
+        ],
+    );
+    issue(
+        &fixture,
+        "acme/cookbook-docs#41",
+        GhIssue {
+            title: "Recipes",
+            sub_issues: &["acme/cookbook-docs#58"],
+            ..GhIssue::default()
+        },
+    );
+    let subs: Vec<String> = (101..=250)
+        .map(|n| format!("acme/cookbook-docs#{n}"))
+        .collect();
+    let subs: Vec<&str> = subs.iter().map(String::as_str).collect();
+    issue(
+        &fixture,
+        "acme/cookbook-docs#58",
+        GhIssue {
+            title: "Search",
+            sub_issues: &subs,
+            ..GhIssue::default()
+        },
+    );
+
+    let run = fixture.run_with_gh("", &["work", "fd-000002"]);
+
+    assert_eq!(
+        run.stdout,
+        "Recipes (fd-000002, draft)\n\
+         - acme/cookbook-docs#41 Recipes (open, 0 of 1 done)\n  \
+           - #58 Search (open), listed by Search (fd-000003)\n",
+        "{}",
+        run.stderr
+    );
+    assert_eq!(
+        fixture.gh_calls(),
+        [
+            issues_call("acme/cookbook-docs", &[41]),
+            issues_call("acme/cookbook-docs", &[58]),
+        ]
+    );
+}
+
+#[test]
+fn marks_the_sub_issues_past_a_repeated_cursor_and_exits_1() {
+    let fixture = tree("work-repeated-cursor", "acme/cookbook-docs#41");
+    let subs: Vec<String> = (101..=250)
+        .map(|n| format!("acme/cookbook-docs#{n}"))
+        .collect();
+    let subs: Vec<&str> = subs.iter().map(String::as_str).collect();
+    for sub in &subs {
+        fixture.gh_issue("github.com", sub);
+    }
+    issue(
+        &fixture,
+        "acme/cookbook-docs#41",
+        GhIssue {
+            title: "Recipe search",
+            sub_issues: &subs,
+            ..GhIssue::default()
+        },
+    );
+    fixture.gh_repeat_sub_issue_cursor("github.com", "acme/cookbook-docs#41", "p1");
+
+    let run = fixture.run_with_gh("", &["work", "fd-000002"]);
+
+    let lines: Vec<&str> = run.stdout.lines().collect();
+    assert_eq!(
+        lines[1],
+        "- acme/cookbook-docs#41 Recipe search (open, 0 of 150 done)"
+    );
+    assert_eq!(
+        lines.last(),
+        Some(&"  - sub-issues past 150 couldn't be read, since GitHub repeated a page cursor")
+    );
+    assert_eq!(lines.len(), 2 + 150 + 1, "{}", run.stderr);
+    assert_eq!(run.code, 1);
+    let pages = fixture.gh_calls();
+    let pages = pages.iter().filter(|call| call.contains("-f cursor=p1"));
+    assert_eq!(pages.count(), 1);
+}
+
+#[test]
+fn keeps_ghs_message_when_its_answer_has_no_graphql_errors() {
+    let fixture = tree("work-http-error", "acme/cookbook-docs#41");
+    fixture.gh_http_error(
+        r#"{"message":"API rate limit exceeded for user ID 1."}"#,
+        "gh: API rate limit exceeded for user ID 1. (HTTP 403)",
+    );
+
+    let run = fixture.run_with_gh("", &["work", "fd-000002"]);
+
+    assert_eq!(run.stdout, "");
+    assert_eq!(
+        run.stderr,
+        "error: `gh` failed: gh: API rate limit exceeded for user ID 1. (HTTP 403)\n"
+    );
+    assert_eq!(run.code, 2);
+}
+
+#[test]
+fn marks_a_sub_issue_github_cant_return_on_the_first_page() {
+    let fixture = tree("work-first-page-error", "acme/cookbook-docs#41");
+    issue(
+        &fixture,
+        "acme/cookbook-docs#41",
+        GhIssue {
+            title: "Recipe search",
+            sub_issues: &["acme/cookbook-docs#58", "-"],
+            ..GhIssue::default()
+        },
+    );
+    issue(
+        &fixture,
+        "acme/cookbook-docs#58",
+        GhIssue {
+            title: "Filters",
+            closed: true,
+            ..GhIssue::default()
+        },
+    );
+    fixture.gh_sub_issue_error("github.com", "acme/cookbook-docs#41", None, 1);
+
+    let run = fixture.run_with_gh("", &["work", "fd-000002"]);
+
+    assert_eq!(
+        run.stdout,
+        "Feature (fd-000002, draft)\n\
+         - acme/cookbook-docs#41 Recipe search (open, 1 of 2 done)\n  \
+           - #58 Filters (closed)\n  \
+           - unknown sub-issue: can't read it on GitHub: Resource not accessible by integration\n"
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn ends_the_parent_chain_at_a_repo_gh_cant_access() {
+    let fixture = tree("work-parent-repo-forbidden", "acme/cookbook-docs#58");
+    issue(
+        &fixture,
+        "acme/cookbook-docs#58",
+        GhIssue {
+            title: "Search filters",
+            parent: Some("acme/roadmap#1"),
+            ..GhIssue::default()
+        },
+    );
+    fixture.gh_forbidden_repo("github.com", "acme/roadmap");
+
+    let run = fixture.run_with_gh("", &["work", "fd-000002"]);
+
+    assert_eq!(
+        run.stdout,
+        "Feature (fd-000002, draft)\n\
+         - acme/cookbook-docs#58 Search filters (open, sub-issue of acme/roadmap#1)\n"
+    );
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn gives_a_sub_issue_two_nodes_at_one_depth_list_to_the_first_in_outline_order() {
+    let fixture = Fixture::new(
+        "work-tie",
+        &[
+            ("manifestdocs.yaml", GITHUB),
+            (
+                "demo.md",
+                &feature("fd-000001", "Demo", "acme/cookbook-docs#41"),
+            ),
+            (
+                "b/b.md",
+                &feature("fd-000003", "B", "acme/cookbook-docs#58"),
+            ),
+            (
+                "a/a.md",
+                &feature("fd-000002", "A", "acme/cookbook-docs#58"),
+            ),
+        ],
+    );
+    issue(
+        &fixture,
+        "acme/cookbook-docs#41",
+        GhIssue {
+            title: "Recipes",
+            sub_issues: &["acme/cookbook-docs#58"],
+            ..GhIssue::default()
+        },
+    );
+    fixture.gh_issue("github.com", "acme/cookbook-docs#58");
+
+    let run = fixture.run_with_gh("", &["work", "fd-000001"]);
+
+    assert_eq!(
+        run.stdout,
+        "Demo (fd-000001, draft)\n\
+         - acme/cookbook-docs#41 Recipes (open, 0 of 1 done)\n  \
+           - #58 Issue 58 (open), listed by A (fd-000002)\n"
     );
 }
