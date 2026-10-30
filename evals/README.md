@@ -2,6 +2,8 @@
 
 Does Manifest Docs help a coding agent find the context a change depends on, compared with plain bash? Each task is a realistic issue against a small cookbook project whose correct answer hinges on one fact in the docs tree that the issue doesn't mention. The pilot measures whether the agent found that fact, whether its change respects it, and what the search cost.
 
+Evals run locally only. CI and the release workflow run only the quick checks: fmt, clippy, `cargo test` and `check --strict`.
+
 ## Hypotheses
 
 | Task | Hypothesis | Where the hidden fact lives | In `mfd context` today? |
