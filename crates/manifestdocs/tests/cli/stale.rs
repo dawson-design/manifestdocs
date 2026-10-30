@@ -21,9 +21,9 @@ fn feature(id: &str, title: &str, work: &str) -> String {
     )
 }
 
-/// A tree in `folder`: a root node; Search (fd-000002), which lists `work` and owns an image
-/// and a decision records folder; and Search's child Filters (fd-000003), which lists
-/// `filters_work`.
+/// A tree in `folder`: a root node; Search (fd-000002), which lists `work` and owns an image,
+/// a decision records folder and a nested tree; and Search's child Filters (fd-000003),
+/// which lists `filters_work`.
 fn files(folder: &str, work: &str, filters_work: &str) -> Vec<(String, String)> {
     let files = [
         ("manifestdocs.yaml", CONFIG.to_owned()),
@@ -38,6 +38,11 @@ fn files(folder: &str, work: &str, filters_work: &str) -> Vec<(String, String)> 
             "search/filters/filters.md",
             feature("fd-000003", "Filters", filters_work),
         ),
+        (
+            "search/vendor/manifestdocs.yaml",
+            "name: vendor\n".to_owned(),
+        ),
+        ("search/vendor/vendor.md", node("fd-000009", "Vendor")),
     ];
     let files = files.into_iter();
     files
@@ -56,7 +61,12 @@ fn fixture(name: &str, files: &[(String, String)]) -> Fixture {
 /// The tree at the fixture's root, committed on `FIRST` and pushed, with no issues that name
 /// a node in a `feature:` line. Returns the commit.
 fn docs(name: &str, work: &str, filters_work: &str) -> (Fixture, String) {
-    let fixture = fixture(name, &files("", work, filters_work));
+    docs_with(name, &files("", work, filters_work))
+}
+
+/// The tree in `files` at the fixture's root, as `docs` commits it.
+fn docs_with(name: &str, files: &[(String, String)]) -> (Fixture, String) {
+    let fixture = fixture(name, files);
     git(&fixture, "", &["init", "-q", "-b", "main"], FIRST);
     let first = publish(&fixture, "", FIRST);
     fixture.gh_search("github.com", "acme/docs", &[]);
@@ -96,20 +106,17 @@ fn commit(fixture: &Fixture, folder: &str, date: &str) -> String {
 /// it were pushed and fetched.
 fn publish(fixture: &Fixture, folder: &str, date: &str) -> String {
     let commit = commit(fixture, folder, date);
-    git(
-        fixture,
-        folder,
-        &["update-ref", "refs/remotes/origin/main", &commit],
-        date,
-    );
-    let origin_head = ["refs/remotes/origin/HEAD", "refs/remotes/origin/main"];
-    git(
-        fixture,
-        folder,
-        &[&["symbolic-ref"][..], &origin_head].concat(),
-        date,
-    );
+    push(fixture, folder, &commit);
     commit
+}
+
+/// Moves `origin/HEAD`, as `origin/main`, to `commit`, as if it were pushed and fetched.
+fn push(fixture: &Fixture, folder: &str, commit: &str) {
+    let update = ["update-ref", "refs/remotes/origin/main", commit];
+    git(fixture, folder, &update, FIRST);
+    let origin_head = ["refs/remotes/origin/HEAD", "refs/remotes/origin/main"];
+    let symbolic_ref = [&["symbolic-ref"][..], &origin_head].concat();
+    git(fixture, folder, &symbolic_ref, FIRST);
 }
 
 fn short(fixture: &Fixture, folder: &str, commit: &str) -> String {
@@ -137,7 +144,8 @@ fn reports_an_open_issue_whose_node_changed_after_its_spec_ref() {
     edit_search(&fixture, "", "acme/docs#41");
     fs::write(fixture.path("search/images/flow.png"), "\0png 2").unwrap();
     let later = publish(&fixture, "", LATER);
-    let body = planned_against(&first);
+    // A short ID works as a spec-ref.
+    let body = planned_against(&short(&fixture, "", &first));
     issue(
         &fixture,
         41,
@@ -283,6 +291,8 @@ fn watches_only_the_files_a_node_owns() {
     let record = "search/decisions/2026-10-01-ranking.md";
     fs::write(fixture.path(record), "# Ranking, edited\n").unwrap();
     fs::write(fixture.path("demo.md"), node("fd-000001", "Demo, edited")).unwrap();
+    let nested = node("fd-000009", "Vendor, edited");
+    fs::write(fixture.path("search/vendor/vendor.md"), nested).unwrap();
     publish(&fixture, "", LATER);
     let body = planned_against(&first);
     issue(
@@ -589,4 +599,269 @@ fn prints_stale_and_unchecked_issues_as_json() {
         })
     );
     assert_eq!(run.code, 1);
+}
+
+/// Has the fake `gh` know `acme/docs#41`, Recipe search, planned against `spec_ref`.
+fn planned_issue(fixture: &Fixture, spec_ref: &str) {
+    let body = planned_against(spec_ref);
+    issue(
+        fixture,
+        41,
+        GhIssue {
+            title: "Recipe search",
+            body: &body,
+            ..GhIssue::default()
+        },
+    );
+}
+
+/// A spec-ref on a branch that was squash-merged, or never merged, would look stale forever.
+#[test]
+fn reports_a_spec_ref_outside_the_history_read_as_not_checked() {
+    let (fixture, _) = docs("stale-unmerged-ref", "acme/docs#41", "");
+    git(&fixture, "", &["checkout", "-q", "-b", "proposal"], LATER);
+    edit_search(&fixture, "", "acme/docs#41");
+    let proposal = commit(&fixture, "", LATER);
+    git(&fixture, "", &["checkout", "-q", "main"], LATER);
+    // Squash-merged: the same change in a new commit.
+    edit_search(&fixture, "", "acme/docs#41");
+    publish(&fixture, "", "2026-10-11T10:00:00Z");
+    let proposal = short(&fixture, "", &proposal);
+    planned_issue(&fixture, &proposal);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Search (fd-000002, draft)  search/search.md\n  \
+             can't check it: its spec-ref `{proposal}` isn't in the history of `HEAD`\n\
+             \n\
+             1 open issue: none stale, 1 not checked\n"
+        )
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn fails_in_a_shallow_clone() {
+    let (fixture, _) = docs("stale-shallow", "acme/docs#41", "");
+    edit_search(&fixture, "", "acme/docs#41");
+    publish(&fixture, "", LATER);
+    let origin = format!("file://{}", fixture.path("").display());
+    git(
+        &fixture,
+        "",
+        &["clone", "-q", "--depth", "1", &origin, "shallow"],
+        LATER,
+    );
+    planned_issue(&fixture, "0000000");
+
+    let run = fixture.run_with_gh("shallow", &["stale"]);
+
+    assert_eq!(
+        run.stderr,
+        "error: the docs clone `.` is shallow, so `stale` can't read its history; fetch all of \
+         it, such as with `git -C . fetch --unshallow`, or `fetch-depth: 0` for actions/checkout\n"
+    );
+    assert_eq!(run.code, 2);
+}
+
+/// A partial clone has the commits and folders but only the files it checked out, and the
+/// tool never fetches, so it can't count the lines that changed.
+#[test]
+fn reports_an_issue_whose_diff_a_partial_clone_cant_read_as_not_checked() {
+    let (fixture, first) = docs("stale-partial", "acme/docs#41", "");
+    edit_search(&fixture, "", "acme/docs#41");
+    let later = publish(&fixture, "", LATER);
+    git(
+        &fixture,
+        "",
+        &["config", "uploadpack.allowFilter", "true"],
+        LATER,
+    );
+    let origin = format!("file://{}", fixture.path("").display());
+    let clone = ["clone", "-q", "--filter=blob:none", &origin, "partial"];
+    git(&fixture, "", &clone, LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("partial", &["stale"]);
+
+    let why = format!(
+        "  can't check it: the docs clone can't diff {} with {}: ",
+        short(&fixture, "", &first),
+        short(&fixture, "", &later)
+    );
+    assert!(run.stdout.contains(&why), "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stdout
+            .ends_with("\n1 open issue: none stale, 1 not checked\n")
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// The folders that were deeper nodes when the issue was planned stay left out, so a child
+/// node that moves isn't read as the parent's files deleted.
+#[test]
+fn leaves_out_a_child_node_that_moved_since_the_baseline() {
+    let (fixture, first) = docs("stale-moved-child", "acme/docs#41", "");
+    fs::rename(
+        fixture.path("search/filters"),
+        fixture.path("search/facets"),
+    )
+    .unwrap();
+    let facets = fixture.path("search/facets");
+    fs::rename(facets.join("filters.md"), facets.join("facets.md")).unwrap();
+    publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(run.stdout, "1 open issue: none stale\n");
+    assert_eq!(run.code, 0);
+}
+
+/// The root node owns every file in the tree except its child nodes, decision records and
+/// the tree's config.
+#[test]
+fn watches_the_files_the_root_node_owns() {
+    let mut files = files("", "", "");
+    files[1].1 = feature("fd-000001", "Demo", "acme/docs#41");
+    let (fixture, first) = docs_with("stale-root", &files);
+    fs::write(
+        fixture.path("manifestdocs.yaml"),
+        format!("{CONFIG}# Edited\n"),
+    )
+    .unwrap();
+    edit_search(&fixture, "", "");
+    fs::create_dir_all(fixture.path("decisions")).unwrap();
+    fs::write(fixture.path("decisions/2026-10-10-scope.md"), "# Scope\n").unwrap();
+    publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+    let unchanged = fixture.run_with_gh("", &["stale"]);
+    fs::write(fixture.path("glossary.md"), "# Glossary\n").unwrap();
+    let later = publish(&fixture, "", "2026-10-12T10:00:00Z");
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(unchanged.stdout, "1 open issue: none stale\n");
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Demo (fd-000001, draft)  demo.md\n  \
+             changed in {} (2026-10-12) after its spec-ref {} (2026-10-01)\n    \
+             glossary.md (+1 -0)\n\
+             \n\
+             1 open issue: 1 stale\n",
+            short(&fixture, "", &later),
+            short(&fixture, "", &first)
+        )
+    );
+}
+
+/// Folder names are matched literally, so `*`, `[` and a leading `:` aren't read as a
+/// pattern that matches `rank1` too.
+#[test]
+fn matches_folder_names_with_pattern_characters_literally() {
+    let mut files = files("", "", "");
+    let odd = ":ra*k[1]/:ra*k[1].md";
+    files.push((odd.into(), feature("fd-00000a", "Rank", "acme/docs#41")));
+    files.push(("rank1/rank1.md".into(), node("fd-00000b", "Rank one")));
+    let (fixture, first) = docs_with("stale-pattern", &files);
+    let edited = format!("{}More.\n", feature("fd-00000a", "Rank", "acme/docs#41"));
+    fs::write(fixture.path(odd), edited).unwrap();
+    fs::write(
+        fixture.path("rank1/rank1.md"),
+        node("fd-00000b", "Rank, edited"),
+    )
+    .unwrap();
+    let later = publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Rank (fd-00000a, draft)  {odd}\n  \
+             changed in {} (2026-10-10) after its spec-ref {} (2026-10-01)\n    \
+             {odd} (+1 -0)\n\
+             \n\
+             1 open issue: 1 stale\n",
+            short(&fixture, "", &later),
+            short(&fixture, "", &first)
+        )
+    );
+}
+
+/// A change made on a branch before the issue was created, but merged after, wasn't on the
+/// default branch when the issue was planned, so it counts.
+#[test]
+fn counts_a_branch_merged_after_the_issue_was_created() {
+    let (fixture, first) = docs("stale-merged", "acme/docs#41", "");
+    git(&fixture, "", &["checkout", "-q", "-b", "side"], LATER);
+    edit_search(&fixture, "", "acme/docs#41");
+    let side = commit(&fixture, "", "2026-10-03T10:00:00Z");
+    git(&fixture, "", &["checkout", "-q", "main"], LATER);
+    let merge = ["merge", "-q", "--no-ff", "-m", "Merge side", "side"];
+    git(&fixture, "", &merge, LATER);
+    let merged = git(&fixture, "", &["rev-parse", "HEAD"], LATER);
+    push(&fixture, "", &merged);
+    let details = GhIssue {
+        title: "Recipe search",
+        created_at: Some("2026-10-05T09:00:00Z"),
+        ..GhIssue::default()
+    };
+    issue(&fixture, 41, details);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Search (fd-000002, draft)  search/search.md\n  \
+             changed in {} (2026-10-03) after {} (2026-10-01), the docs when it was created\n    \
+             search/search.md (+1 -0)\n\
+             \n\
+             1 open issue: 1 stale\n",
+            short(&fixture, "", &side),
+            short(&fixture, "", &first)
+        )
+    );
+}
+
+#[test]
+fn prints_an_issue_older_than_the_docs_as_json() {
+    let (fixture, first) = docs("stale-json-older", "acme/docs#41", "");
+    let details = GhIssue {
+        title: "Recipe search",
+        created_at: Some("2026-09-01T09:00:00Z"),
+        ..GhIssue::default()
+    };
+    issue(&fixture, 41, details);
+
+    let run = fixture.run_with_gh("", &["stale", "--json"]);
+
+    let output: Value = serde_json::from_str(&run.stdout).expect("JSON output");
+    assert_eq!(
+        output["data"]["stale"],
+        json!([{
+            "issue": "acme/docs#41",
+            "title": "Recipe search",
+            "node": "fd-000002",
+            "file": "search/search.md",
+            "spec_ref": null,
+            "created_at": "2026-09-01T09:00:00Z",
+            "since": null,
+            "changed_in": { "commit": first, "date": "2026-10-01" },
+            "changes": [
+                { "path": "search/images/flow.png", "added": null, "removed": null },
+                { "path": "search/search.md", "added": 9, "removed": 0 }
+            ]
+        }])
+    );
 }

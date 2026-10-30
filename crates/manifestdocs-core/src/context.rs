@@ -890,7 +890,7 @@ fn ancestor_piece(request: &Request, ancestor: &Entry, is_parent: bool) -> Piece
 fn issue_pieces(chain: &IssueChain) -> Vec<Piece> {
     let issue = &chain.issue;
     let heading = format!("Issue: {} ({})", issue.title, notes(chain, issue));
-    let body = issue.body.replace("\r\n", "\n");
+    let body = issue.body().unwrap_or_default().replace("\r\n", "\n");
     let text = trimmed(&body).to_owned();
     let piece = Piece::new(PieceKind::Issue, heading, None, text);
     let mut pieces = vec![piece.named(issue.reference.to_string())];

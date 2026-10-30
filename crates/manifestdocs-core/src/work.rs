@@ -209,14 +209,27 @@ fn feature_findings(node_ids: &BTreeSet<NodeId>, searched: &[IssueBody]) -> Vec<
 pub struct Issue {
     pub reference: IssueRef,
     pub title: String,
-    /// `""` when the command doesn't ask for it, as `work` doesn't.
-    pub body: String,
     pub state: IssueState,
     /// A display label only, such as `Epic`.
     pub issue_type: Option<String>,
     pub parent: Option<IssueRef>,
     /// In GitHub's order.
     pub sub_issues: Vec<SubIssue>,
+    /// `None` unless the query asked for it, as `context` and `stale` do.
+    pub text: Option<IssueText>,
+}
+
+impl Issue {
+    /// `None` when the query didn't ask for the body.
+    pub fn body(&self) -> Option<&str> {
+        self.text.as_ref().map(|text| text.body.as_str())
+    }
+}
+
+/// An issue's body and creation time, which `context` and `stale` read and `work` doesn't.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IssueText {
+    pub body: String,
     /// RFC 3339, such as `2026-10-01T09:30:00Z`.
     pub created_at: String,
 }
@@ -545,10 +558,10 @@ impl IssueChain {
     ) -> Result<&'a Entry, Box<Unlinked>> {
         let listed = work_listings(tree, snapshot);
         let parents = self.parents.iter().map(|parent| match parent {
-            Ok(issue) => (&issue.reference, Some(issue.body.as_str())),
+            Ok(issue) => (&issue.reference, issue.body()),
             Err((reference, _)) => (reference, None),
         });
-        let issue = (&self.issue.reference, Some(self.issue.body.as_str()));
+        let issue = (&self.issue.reference, self.issue.body());
         for (reference, body) in iter::once(issue).chain(parents) {
             if let Some(entry) = listed.get(&IssueKey::from(reference)) {
                 return Ok(entry);

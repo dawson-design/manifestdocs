@@ -46,7 +46,7 @@ pub fn run(arg: &str, json: bool, reference: Option<&str>) -> Result<ExitCode> {
         }
     };
     let takeovers = takeovers(&tree, entry, node);
-    let fetched = gh::fetch_hierarchy(&github.host, &node.work, &takeovers)?;
+    let fetched = gh::fetch_hierarchy(&github.host, &node.work, &takeovers, gh::Fields::Work)?;
     let parents = gh::fetch_parents(&github.host, &top_parents(&node.work, &fetched))?;
     let github = GitHubWork {
         fetched: &fetched,

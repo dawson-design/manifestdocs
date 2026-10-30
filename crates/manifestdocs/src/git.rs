@@ -75,6 +75,7 @@ pub fn origin_head(clone: &Path) -> Option<String> {
 }
 
 /// A commit `reference` names in the clone.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commit {
     /// The full ID, for reading the commit's files.
     pub id: String,
@@ -297,6 +298,27 @@ pub fn commit_before(clone: &Path, head: &str, time: &str) -> Result<Option<Comm
     let before = format!("--before={time}");
     let args = ["rev-list", "-1", "--first-parent", &before, head];
     found(clone, &run(clone, &args)?)
+}
+
+/// Whether commit `ancestor` is in `head`'s history, `head` included. Both are commit IDs.
+pub fn is_ancestor(clone: &Path, ancestor: &str, head: &str) -> Result<bool> {
+    let args = ["merge-base", "--is-ancestor", ancestor, head];
+    let output = command(clone).args(args).output();
+    let output = output.context("can't run `git`")?;
+    // `--is-ancestor` exits 1 for "no" and higher for an error.
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("`git merge-base` failed: {}", stderr.trim())
+        }
+    }
+}
+
+/// Whether the clone is shallow, so commits before its cut-off aren't in it.
+pub fn is_shallow(clone: &Path) -> Result<bool> {
+    Ok(run(clone, &["rev-parse", "--is-shallow-repository"])? == "true")
 }
 
 /// The commit `id` names, or `None` for no ID.
