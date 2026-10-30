@@ -2,7 +2,7 @@
 //! on stdin, the project folder in `CLAUDE_PROJECT_DIR`, and `manifestdocs` on the PATH.
 
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -57,7 +57,11 @@ fn run_hook(name: &str, input: &str, project: &Path, path: &str) -> Run {
         .spawn()
         .expect("the script runs");
     let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(input.as_bytes()).unwrap();
+    // A script that ignores its input can exit before this write, as Claude Code allows.
+    match stdin.write_all(input.as_bytes()) {
+        Err(error) if error.kind() == ErrorKind::BrokenPipe => {}
+        result => result.unwrap(),
+    }
     drop(stdin);
     let output = child.wait_with_output().unwrap();
     Run {
