@@ -32,15 +32,9 @@ pub fn run(arg: &str, json: bool, reference: Option<&str>) -> Result<ExitCode> {
     };
     let selector = show_selector(&tree, &snapshot, arg, &paths)?;
     if let NodeSelector::Decision(prefix) = &selector {
-        // A record's JSON shape isn't settled yet, so `--json` refuses rather than printing text.
-        if json {
-            return Err(anyhow!(
-                "`show --json` doesn't support decision records yet"
-            ));
-        }
         files::read_records(&mut snapshot, &docs, &tree.config, &cwd)?;
         let records = read_records(&tree.config, &snapshot);
-        return record::run(&tree, &records, arg, prefix, &paths);
+        return record::run(&tree, &records, arg, prefix, &paths, json);
     }
     let entry = tree
         .select(&selector)

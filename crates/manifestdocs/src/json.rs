@@ -34,7 +34,7 @@ struct Failure<'a> {
 }
 
 #[derive(Serialize)]
-struct JsonFinding {
+pub struct JsonFinding {
     file: String,
     line: Option<u32>,
     severity: String,
@@ -283,7 +283,7 @@ fn line(value: &impl Serialize) -> Result<String> {
     Ok(text)
 }
 
-fn finding(finding: &Finding, tree_root: &Path, cwd: &Path) -> JsonFinding {
+pub fn finding(finding: &Finding, tree_root: &Path, cwd: &Path) -> JsonFinding {
     let problem = &finding.problem;
     JsonFinding {
         file: finding_path(finding, tree_root, cwd),
