@@ -582,3 +582,73 @@ fn fails_when_git_cant_run_for_a_docs_clone() {
     );
     assert_eq!(run.code, 2);
 }
+
+/// A sandboxed agent reads the docs through a read-only mount, so reading must not need to
+/// write to the clone.
+#[test]
+fn reads_a_read_only_docs_clone() {
+    let (fixture, main, _) = workspace("source-read-only");
+    set_read_only(&fixture.path("work/docs"), true);
+    set_read_only(&fixture.path("origin.git"), true);
+
+    let check = fixture.run("work/docs", &["check"]);
+    let context = fixture.run("work/web", &["context", "fd-7c2e41"]);
+
+    set_read_only(&fixture.path("work/docs"), false);
+    set_read_only(&fixture.path("origin.git"), false);
+    assert_eq!(check.stdout, "2 nodes: no problems\n", "{}", check.stderr);
+    assert!(
+        context.stdout.starts_with(&format!(
+            "# Context: fd-7c2e41 (docs origin/main @ {main}, "
+        )),
+        "{}{}",
+        context.stdout,
+        context.stderr
+    );
+    assert_eq!(context.code, 0);
+}
+
+/// A mount owned by another user is one git refuses until the user's git config lists it in
+/// `safe.directory`, and the tool keeps that protection rather than overriding it.
+#[test]
+fn reads_a_clone_another_user_owns_once_git_trusts_it() {
+    let (fixture, _, _) = workspace("source-other-owner");
+    let other_owner = [("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")];
+
+    let refused = run_with(&fixture, "work/docs", &["tree"], &other_owner);
+    fs::write(fixture.path(".gitconfig"), "[safe]\n\tdirectory = *\n").unwrap();
+    let trusted = run_with(&fixture, "work/docs", &["tree"], &other_owner);
+
+    assert!(
+        refused
+            .stderr
+            .starts_with("error: can't read the docs clone `.`: ")
+            && refused.stderr.contains("dubious ownership"),
+        "{}",
+        refused.stderr
+    );
+    assert_eq!(refused.code, 2);
+    assert_eq!(trusted.code, 0, "{}", trusted.stderr);
+}
+
+/// Makes every file and folder under `path` read-only, or writable again.
+fn set_read_only(path: &std::path::Path, read_only: bool) {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let is_dir = path.is_dir();
+    if is_dir && !read_only {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    if is_dir {
+        for entry in fs::read_dir(path).unwrap() {
+            set_read_only(&entry.unwrap().path(), read_only);
+        }
+    }
+    let mode = match (is_dir, read_only) {
+        (true, true) => 0o555,
+        (true, false) => 0o755,
+        (false, true) => 0o444,
+        (false, false) => 0o644,
+    };
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+}
