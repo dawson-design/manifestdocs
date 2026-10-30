@@ -1,5 +1,7 @@
 //! `--json` output, schema version 1.
 
+mod context;
+
 use serde_json::{Value, json};
 
 use crate::support::{Fixture, Run, node};
@@ -502,20 +504,6 @@ fn json_after_a_double_dash_is_not_a_request_for_json() {
     assert!(
         run.stderr
             .starts_with("error: invalid value 'x' for '--depth <DEPTH>'")
-    );
-    assert_eq!(run.code, 2);
-}
-
-#[test]
-fn context_with_json_is_a_text_usage_error() {
-    let fixture = cookbook("json-context");
-
-    let run = fixture.run("", &["context", "fd-7c2e41", "--json"]);
-
-    assert_eq!(run.stdout, "");
-    assert!(
-        run.stderr
-            .starts_with("error: unexpected argument '--json' found")
     );
     assert_eq!(run.code, 2);
 }
