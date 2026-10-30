@@ -18,13 +18,14 @@ Each task's `checklist.md` states the fact, the obvious wrong implementation and
 
 ## Arms
 
-Every arm gets the same `AGENTS.md`, passed with `--append-system-prompt`, which says the requirements and decisions are in `docs/`.
+Arms A, B and C get the same `AGENTS.md`, passed with `--append-system-prompt`, which says the requirements and decisions are in `docs/`.
 
 - **A, bash.** Image `mfd-eval:a`: Claude Code, Python, git. No `manifestdocs`, no plugin.
 - **B, mfd.** Image `mfd-eval:b`: A, plus `manifestdocs` and `mfd` built for Linux, and the plugin from `plugins/manifestdocs` installed from the repo's local marketplace, as a user installs it. The workdir also gets a `.manifestdocs/config.yaml` pointer to `docs/`.
 - **C, context at start.** B, plus `manifestdocs context <node> --format md --budget 8000` appended to the system prompt. Opt in with `--arms A,B,C`.
+- **N, no spec.** The control. Image `mfd-eval:a`, with no `docs/` in the workdir and no `docs/` line in `AGENTS.md`. The prompt is a ticket that carries its acceptance criteria: the task prompt with the target node's Requirements section in place of its `Spec:` line. Hidden facts outside the target node never reach it, so N sets the floor the other arms must beat; H5's fact is in its prompt, so H5 should still tie. Opt in with `--arms N,A,B`.
 
-`metrics.py` confirms from each transcript that arm B loaded the plugin and got its session-start outline, and that arm A did neither; the report warns otherwise.
+`metrics.py` confirms from each transcript that arm B loaded the plugin and got its session-start outline, and that arms A and N did neither; the report warns otherwise.
 
 ## Isolation
 
@@ -71,6 +72,8 @@ evals/run.sh
 
 **Cost.** 18 sessions; a session on this fixture should take 15 to 40 tool calls and 2 to 6 minutes. Take the price from the smoke test's `cost_usd`. The per-session cap bounds the run at $54. On a subscription token, the sessions use plan quota instead.
 
+To measure both against no spec, add arm N: `evals/run.sh --arms N,A,B`, 27 sessions, capped at $81.
+
 ## Read the results
 
 `report.py` prints a table per task:
@@ -78,7 +81,7 @@ evals/run.sh
 - **Solved:** runs that passed every checklist item.
 - **Checklist:** the share of items passed, mean and min–max over runs.
 - **Hidden:** the share of hidden-fact items passed, counted only in runs that passed every base item, because some hidden items also pass on the untouched fixture.
-- **Facts seen:** runs where the fact's sentence reached the agent, in a tool result or the injected context. Low **Hidden** with high **Facts seen** means the agent found the fact and ignored it, which is a different problem from not finding it.
+- **Facts seen:** runs where the fact's sentence reached the agent, in a tool result, arm C's injected context or arm N's prompt. Low **Hidden** with high **Facts seen** means the agent found the fact and ignored it, which is a different problem from not finding it.
 - **Calls, Tokens, Cost, Wall:** medians, the retrieval cost.
 
 Rules for reading it:

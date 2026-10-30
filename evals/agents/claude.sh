@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs Claude Code headless for one eval session, in a throwaway container. run.sh sets:
 #
-#   EVAL_IMAGE        mfd-eval:a for arm A; mfd-eval:b (manifestdocs and the plugin) otherwise
+#   EVAL_IMAGE        mfd-eval:a for arms A and N; mfd-eval:b (manifestdocs and the plugin) otherwise
 #   EVAL_NAME         the container's name
 #   EVAL_WORKDIR      the fresh fixture repo, the container's only mount, at /work
 #   EVAL_PROMPT_FILE  the task prompt

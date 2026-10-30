@@ -11,8 +11,9 @@ For each task and arm:
 - calls, tokens, cost, wall: medians over runs. Tokens count input, output and cache reads
   and writes together.
 
-The verdict compares each mfd arm with arm A on the hidden mean. A difference no larger than
-the wider of the two arms' min-max ranges counts as no difference.
+The verdicts compare every arm with arm N, the no-spec control, and each mfd arm with arm A,
+on the hidden mean. A difference no larger than the wider of the two arms' min-max ranges
+counts as no difference.
 """
 
 import json
@@ -80,12 +81,12 @@ def row(arm: str, runs: List[dict]) -> Tuple[str, float, float]:
     return "| " + " | ".join(cells) + " |", mean, spread
 
 
-def verdict(arm: str, base: Tuple[float, float], other: Tuple[float, float]) -> str:
+def verdict(arm: str, base_arm: str, base: Tuple[float, float], other: Tuple[float, float]) -> str:
     diff = other[0] - base[0]
     noise = max(base[1], other[1])
     if abs(diff) <= noise:
-        return f"{arm} vs A: no difference ({diff:+.0%}, spread {noise:.0%})"
-    return f"{arm} vs A: {'better' if diff > 0 else 'worse'} by {diff:+.0%} (spread {noise:.0%})"
+        return f"{arm} vs {base_arm}: no difference ({diff:+.0%}, spread {noise:.0%})"
+    return f"{arm} vs {base_arm}: {'better' if diff > 0 else 'worse'} by {diff:+.0%} (spread {noise:.0%})"
 
 
 def task_section(task: str, arms: Dict[str, List[dict]]) -> List[str]:
@@ -98,17 +99,19 @@ def task_section(task: str, arms: Dict[str, List[dict]]) -> List[str]:
         lines.append(text)
         stats[arm] = (mean, spread)
     lines.append("")
-    if "A" in stats:
-        lines += [f"- {verdict(arm, stats['A'], stats[arm])}" for arm in sorted(stats) if arm != "A"]
+    for base in ("N", "A"):
+        if base in stats:
+            lines += [f"- {verdict(arm, base, stats[base], stats[arm])}"
+                      for arm in sorted(stats) if arm not in (base, "N")]
     return lines + plugin_warnings(arms) + [""]
 
 
 def plugin_warnings(arms: Dict[str, List[dict]]) -> List[str]:
-    """Arm A must not see the plugin; arms B and C must load it and get its outline."""
+    """Arms A and N must not see the plugin; arms B and C must load it and get its outline."""
     warnings = []
     for arm, runs in sorted(arms.items()):
         measured = [r["metrics"] for r in runs if "plugin_loaded" in r.get("metrics", {})]
-        if arm == "A":
+        if arm in ("A", "N"):
             bad = [m for m in measured if m["plugin_loaded"] or m["outline_seen"]]
             what = "saw the manifestdocs plugin"
         else:

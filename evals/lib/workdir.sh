@@ -1,8 +1,9 @@
 # make_workdir <arm> <dest>: copies the fixture to <dest> as a fresh git repo set up for
 # one arm, and tags the starting commit `eval-base` so check.sh can diff against it.
 #
-# AGENTS.md is the same in every arm. Arms B and C also get a .manifestdocs pointer to docs/,
-# which a project using Manifest Docs commits; their image adds the binaries and the plugin.
+# AGENTS.md is the same in arms A, B and C. Arms B and C also get a .manifestdocs pointer to
+# docs/, which a project using Manifest Docs commits; their image adds the binaries and the
+# plugin. Arm N, the no-spec control, gets no docs/ and drops the AGENTS.md line about it.
 
 EVALS=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 REPO_ROOT=$(cd "$EVALS/.." && pwd)
@@ -16,6 +17,10 @@ make_workdir() {
     B | C)
       mkdir -p "$dest/.manifestdocs"
       printf 'tree: docs\n' >"$dest/.manifestdocs/config.yaml"
+      ;;
+    N)
+      rm -rf "$dest/docs"
+      grep -vF '`docs/`' "$EVALS/fixture/AGENTS.md" >"$dest/AGENTS.md"
       ;;
     *)
       echo "unknown arm: $arm" >&2

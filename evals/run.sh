@@ -11,7 +11,8 @@
 #   --tasks     task folders under tasks/ (default: the first paid run, H2, H4 and H5;
 #               H1 and H3 wait for decisions in `context`)
 #   --arms      A (agent CLI only), B (plus manifestdocs and the plugin), C (B with context
-#               injected) (default: A,B)
+#               injected), N (A with no docs; the prompt carries the target node's
+#               requirements) (default: A,B)
 #   --runs      sessions per task and arm (default: 3)
 #   --agent     an adapter in agents/ (default: claude)
 #   --out       results folder (default: results/<timestamp>)
@@ -44,7 +45,7 @@ out=${out:-$EVALS/results/$( [ $dry = 1 ] && echo dry- )$(date +%Y%m%d-%H%M%S)}
 budget=${EVAL_BUDGET:-8000}
 export EVAL_MODEL=${EVAL_MODEL:-claude-opus-5-5}
 
-image_for() { [ "$1" = A ] && echo mfd-eval:a || echo mfd-eval:b; }
+image_for() { case "$1" in A | N) echo mfd-eval:a ;; *) echo mfd-eval:b ;; esac; }
 json_field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"; }
 now() { python3 -c 'import time; print(time.time())'; }
 
@@ -92,18 +93,36 @@ inject_context() {
     --entrypoint manifestdocs mfd-eval:b context "$node" --format md --budget "$budget" >>"$system"
 }
 
+# Writes arm N's prompt, shaped like a ticket that carries its acceptance criteria: the task
+# prompt without its Spec line, then the target node's Requirements section.
+ticket_prompt() {
+  local task=$1 dest=$2 node
+  node=$EVALS/fixture/$(json_field "$EVALS/tasks/$task/task.json" node)
+  grep -qx '## Requirements' "$node" || { echo "no Requirements section in $node" >&2; return 2; }
+  {
+    grep -v '^Spec: ' "$EVALS/tasks/$task/prompt.md"
+    printf '## Acceptance criteria\n'
+    awk '/^## /{on = ($0 == "## Requirements"); next} on' "$node"
+  } >"$dest"
+}
+
 session() {
   local task=$1 arm=$2 run=$3
   local id=$task.$arm.$run dir=$scratch/$task.$arm.$run
   local work=$dir/repo transcript=$out/$task.$arm.$run.jsonl start wall
+  local prompt=$EVALS/tasks/$task/prompt.md
   make_workdir "$arm" "$work" || exit 2
   cp "$work/AGENTS.md" "$dir/system.md"
   [ "$arm" = C ] && inject_context "$work" "$dir/system.md" "$task"
+  if [ "$arm" = N ]; then
+    prompt=$dir/prompt.md
+    ticket_prompt "$task" "$prompt" || exit 2
+  fi
 
   echo "== $id"
   start=$(now)
   EVAL_IMAGE=$(image_for "$arm") EVAL_NAME=mfd-eval-$id EVAL_WORKDIR=$work \
-    EVAL_PROMPT_FILE=$EVALS/tasks/$task/prompt.md EVAL_SYSTEM_FILE=$dir/system.md \
+    EVAL_PROMPT_FILE=$prompt EVAL_SYSTEM_FILE=$dir/system.md \
     EVAL_TRANSCRIPT=$transcript EVAL_DRY_RUN=$dry EVAL_MAX_USD=${EVAL_MAX_USD:-3} \
     EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800} "$EVALS/agents/$agent.sh"
   wall=$(python3 -c "print(round($(now) - $start, 1))")
@@ -119,7 +138,8 @@ record() {
   (cd "$work" && git add -A -N && git diff eval-base) >"$out/$id.diff"
   python3 "$EVALS/lib/metrics.py" --task-json "$EVALS/tasks/$task/task.json" --arm "$arm" \
     --wall "$wall" ${transcript:+--transcript "$transcript"} \
-    $( [ "$arm" = C ] && echo --injected "$dir/system.md" ) >"$dir/metrics.json"
+    $( [ "$arm" = C ] && echo --injected "$dir/system.md" ) \
+    $( [ "$arm" = N ] && echo --injected "$dir/prompt.md" ) >"$dir/metrics.json"
   python3 - "$dir/check.json" "$dir/metrics.json" "$agent" "$out/$id.json" <<'PY'
 import json, sys
 check, metrics, agent, dest = sys.argv[1:]

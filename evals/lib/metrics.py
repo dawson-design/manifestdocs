@@ -9,11 +9,12 @@ Prints one JSON object. With no transcript (a dry run), the transcript fields ar
 - docs_opened: docs/ Markdown paths named in Read, Grep or Glob inputs or in Bash commands.
 - needed_opened: which of the task's needed_files are in docs_opened.
 - facts_seen: for each hidden fact, whether its sentinel sentence reached the agent, in a tool
-  result or in text injected into the system prompt (arm C). This is the main retrieval measure.
-- facts_injected: for each hidden fact, whether arm C's injected context carried it. Measured
-  without a transcript too, so a dry run shows what arm C starts with.
+  result, in text injected into the system prompt (arm C) or in the requirements carried in
+  the prompt (arm N). This is the main retrieval measure.
+- facts_injected: for each hidden fact, whether arm C's injected context or arm N's prompt
+  carried it. Measured without a transcript too, so a dry run shows what the arm starts with.
 - plugin_loaded: the init event lists something named manifestdocs (a plugin, skill or slash
-  command). Arm B must have it and arm A must not.
+  command). Arm B must have it and arms A and N must not.
 - outline_seen: the plugin's session-start hook put the tree outline in the session. It's
   looked for outside tool results, so the agent running `manifestdocs tree` doesn't count.
 """
