@@ -56,7 +56,13 @@ Skip personal preferences, which belong in your local memory, and details that t
 
 When the decision changes what a feature does, also draft the change to the node's requirements and scenarios with the `manifestdocs-author` skill, and show it with the record. Both go in the same docs pull request: the spec states the behaviour, and the record keeps the why and the rejected options.
 
-When the decision changes an approved spec or spans several nodes, offer to draft an ADR from the record afterwards, in the docs repo's own ADR format, and ask where ADRs go if the repo has none. It gets its own docs pull request by the write path below, with the ADR in place of step 3. Once that pull request merges, promote the record in another one: change its `status:` line to `superseded`, and end its body with a link to the ADR, such as `**Superseded by.** [ADR 12: Search page size](../../adr/0012-search-page-size.md)`. Edit the record file directly, because `manifestdocs decide` only writes new records.
+When the decision changes an approved spec or spans several nodes, offer to draft an ADR from the record afterwards, in the docs repo's own ADR format, and ask where ADRs go if the repo has none. Open it in its own docs pull request by the write path below, with `adr` in place of `decision` in the branch and folder names, because the record's branch already exists. In place of step 3, make these changes in the worktree, so they all take effect when the ADR merges:
+
+- Write the ADR.
+- Edit the record file directly, because `manifestdocs decide` only writes new records: change its `status:` line to `superseded`, and end its body with a link to the ADR, such as `**Superseded by.** [ADR 12: Search page size](../../adr/0012-search-page-size.md)`. `check` doesn't check links in records, so confirm the path resolves from the record's folder.
+- Link the ADR from the body of each node it affects, because `context` leaves out superseded records and loads linked docs.
+
+If the record's own pull request hasn't merged yet, create the worktree from `origin/decision/<topic>` instead of `origin/HEAD`.
 
 ## Write it: interactive session
 
@@ -72,7 +78,7 @@ The record gets its own docs pull request, apart from any code, even when the tr
    If `origin/HEAD` isn't set, ask the user to run `git -C <docs repo> remote set-head origin --auto`.
 3. From the worktree folder, or the tree folder inside it, pass each confirmed record to `manifestdocs decide --file -` on stdin. It prints the path it wrote. When the record has `supersedes`, it also marks the older record `superseded` and prints that path too. It reports every problem in the input with its line and fix: correct the draft and run it again. Make any requirement change in the worktree's copy of the node.
 4. In the worktree, stage the printed paths and any node you changed, and commit them with the record's title as the message.
-5. Push the branch with `git push -u origin decision/<topic>`, and open the pull request from the worktree folder with `gh pr create`. Use the record's title as the PR title, and its **Decision.** and **Why.** lines as the body.
+5. Push the branch with `git push -u origin <branch>`, and open the pull request from the worktree folder with `gh pr create`. Use the record's title as the PR title, and its **Decision.** and **Why.** lines as the body.
 6. Remove the worktree with `git -C <docs repo> worktree remove <worktree>`, and give the user the PR's URL.
 
 Records confirmed together can share one worktree and one pull request. If a step fails, stop, keep the worktree, and tell the user its path and what's left to do.
