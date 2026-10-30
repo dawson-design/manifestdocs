@@ -672,3 +672,20 @@ fn json_marks_a_rerun_as_unchanged() {
     assert_eq!(data["record"], Value::Null);
     assert_eq!(run.code, 0);
 }
+
+#[test]
+fn warns_when_a_detached_head_has_commits_that_arent_on_the_default_branch() {
+    let fixture = on_fresh_branch("decide-detached-ahead");
+    fs::write(fixture.path("demo.md"), node("fd-000001", "Demo, edited")).unwrap();
+    git(&fixture, &["commit", "-q", "-am", "Edit the root"]);
+    git(&fixture, &["checkout", "-q", "--detach"]);
+
+    let run = decide(&fixture, &["--file", "draft.md"]);
+
+    assert_eq!(
+        run.stderr,
+        "warning: the docs clone's detached HEAD has commits that aren't on its default branch `main`\n"
+    );
+    assert_eq!(run.stdout, format!("{WRITTEN}\n"));
+    assert_eq!(run.code, 0);
+}
