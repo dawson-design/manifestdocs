@@ -83,6 +83,9 @@ enum Command {
         /// Write the context to this file instead of stdout
         #[arg(long, value_name = "PATH")]
         out: Option<PathBuf>,
+        /// Print JSON, in schema version 1, instead of Markdown
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
         #[command(flatten)]
         docs: DocsRef,
     },
@@ -142,6 +145,7 @@ impl Command {
             Self::Decide { json: true, .. } => Some("decide"),
             Self::Decisions { json: true, .. } => Some("decisions"),
             Self::Work { json: true, .. } => Some("work"),
+            Self::Context { json: true, .. } => Some("context"),
             _ => None,
         }
     }
@@ -199,8 +203,15 @@ fn main() -> ExitCode {
             format: Format::Md,
             budget,
             out,
+            json,
             docs,
-        } => context::run(&node, budget, out.as_deref(), docs.reference.as_deref()),
+        } => context::run(&context::Args {
+            arg: &node,
+            budget,
+            out: out.as_deref(),
+            reference: docs.reference.as_deref(),
+            json,
+        }),
         Command::Work { node, json, docs } => work::run(&node, json, docs.reference.as_deref()),
         Command::Init { title } => init::run(title.as_deref()),
         Command::Decide {

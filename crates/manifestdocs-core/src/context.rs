@@ -260,20 +260,151 @@ pub struct Request<'a> {
     pub shown: &'a dyn Fn(&RepoPath) -> String,
 }
 
-/// One piece of the context after the target. Pieces fill the budget in order, and a piece
-/// that's left out is named at the end.
-struct Piece {
-    section: Section,
-    text: String,
+/// What a piece of the context is: one kind per kind of section in the text output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PieceKind {
+    Issue,
+    ParentWork,
+    /// The node the context is for, which always goes in.
+    Target,
+    Parent,
+    /// An ancestor above the parent, other than the root node.
+    Ancestor,
+    /// The root node, as an ancestor.
+    Project,
+    Decision,
+    LinkedDoc,
+    LinkedNode,
+    OtherLink,
+    Child,
+}
+
+impl PieceKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Issue => "issue",
+            Self::ParentWork => "parent_work",
+            Self::Target => "target",
+            Self::Parent => "parent",
+            Self::Ancestor => "ancestor",
+            Self::Project => "project",
+            Self::Decision => "decision",
+            Self::LinkedDoc => "linked_doc",
+            Self::LinkedNode => "linked_node",
+            Self::OtherLink => "other_link",
+            Self::Child => "child",
+        }
+    }
+
+    fn section(self) -> Section {
+        match self {
+            Self::Issue => Section::Issue,
+            Self::ParentWork => Section::ParentWork,
+            Self::Target => Section::Target,
+            Self::Parent | Self::Ancestor | Self::Project => Section::Ancestors,
+            Self::Decision => Section::Decisions,
+            Self::LinkedDoc => Section::LinkedDocs,
+            Self::LinkedNode => Section::LinkedNodes,
+            Self::OtherLink => Section::OtherLinks,
+            Self::Child => Section::Around,
+        }
+    }
+}
+
+/// One piece of the context. The pieces after the target fill the budget in order, and a
+/// piece that's left out is named at the end.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Piece {
+    pub kind: PieceKind,
+    /// The piece's own heading, or its section's for a list item, without the `#`s.
+    pub heading: String,
+    /// The file the piece is read from, or the path or URL it lists. `None` for the issue and
+    /// parent work.
+    pub path: Option<String>,
+    /// The piece's Markdown under its heading, trimmed.
+    pub text: String,
+    /// How the text output prints the piece.
+    markdown: String,
+    /// How the text output's list of what's left out names the piece.
     name: String,
 }
 
-/// The sections around the target, in the order they're printed. Pieces fill the budget in
-/// their own order, so a section can be printed after pieces that filled the budget later.
+impl Piece {
+    /// A piece printed from its fields: a linked doc under its own heading, the issue under
+    /// its heading, and a list item as its text.
+    fn new(kind: PieceKind, heading: String, path: Option<String>, text: String) -> Self {
+        let markdown = match kind {
+            PieceKind::LinkedDoc => format!("\n### {heading}\n\n{text}\n"),
+            PieceKind::Issue => headed(&heading, None, &text),
+            _ => format!("{text}\n"),
+        };
+        Self {
+            kind,
+            name: path.clone().unwrap_or_default(),
+            heading,
+            path,
+            text,
+            markdown,
+        }
+    }
+
+    /// A node in full, under its heading and, when it has one, the line naming its folder.
+    fn node(
+        kind: PieceKind,
+        heading: String,
+        folder: Option<&str>,
+        file: String,
+        body: &str,
+    ) -> Self {
+        let text = trimmed(body).to_owned();
+        Self {
+            kind,
+            markdown: headed(&heading, folder, &text),
+            name: file.clone(),
+            heading,
+            path: Some(file),
+            text,
+        }
+    }
+
+    fn named(self, name: String) -> Self {
+        Self { name, ..self }
+    }
+}
+
+/// A piece left out for the budget.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Omitted {
+    pub kind: PieceKind,
+    pub path: Option<String>,
+    /// The piece's estimated size in the text output.
+    pub tokens: u32,
+    name: String,
+}
+
+/// The assembled context, as data and as the text output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Context {
+    /// The node's ID, or the issue's reference.
+    pub target: String,
+    /// The pieces that went in, in the order they're printed.
+    pub pieces: Vec<Piece>,
+    /// The pieces left out for the budget, in fill order.
+    pub omitted: Vec<Omitted>,
+    /// The text output's estimated size, as its last line states it.
+    pub tokens: u32,
+    pub budget: Option<u32>,
+    /// The text output, in Markdown.
+    pub markdown: String,
+}
+
+/// The sections, in the order they're printed. Pieces fill the budget in their own order, so
+/// a section can be printed after pieces that filled the budget later.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
     Issue,
     ParentWork,
+    Target,
     Ancestors,
     Decisions,
     LinkedDocs,
@@ -285,7 +416,7 @@ enum Section {
 impl Section {
     fn heading(self) -> &'static str {
         match self {
-            Section::Issue | Section::Ancestors => "",
+            Section::Issue | Section::Target | Section::Ancestors => "",
             Section::ParentWork => "\n## Parent work\n\n",
             Section::Decisions => "\n## Decisions\n\n",
             Section::LinkedDocs => "\n## Linked docs\n",
@@ -294,15 +425,37 @@ impl Section {
             Section::Around => "\n## Around this feature\n\n",
         }
     }
+
+    /// The heading's text, for the list items under it.
+    fn title(self) -> String {
+        self.heading().trim().trim_start_matches("## ").to_owned()
+    }
+}
+
+/// `heading`, then the `Path:` line when there's a folder, then `text` when there is any.
+fn headed(heading: &str, folder: Option<&str>, text: &str) -> String {
+    let mut out = format!("\n## {heading}\n");
+    if let Some(folder) = folder {
+        out.push_str(&format!("Path: {folder}\n"));
+    }
+    if !text.is_empty() {
+        out.push_str(&format!("\n{text}\n"));
+    }
+    out
+}
+
+/// A list item under its section's heading.
+fn item(kind: PieceKind, path: Option<String>, text: String) -> Piece {
+    Piece::new(kind, kind.section().title(), path, text)
 }
 
 /// The header and the target node, which always go in. Sections about an issue go between.
 struct Head {
     header: String,
-    target: String,
+    target: Piece,
 }
 
-pub fn context(request: &Request) -> String {
+pub fn context(request: &Request) -> Context {
     let name = match request.issue {
         Some(chain) => chain.issue.reference.to_string(),
         None => request.entry.id.to_string(),
@@ -317,24 +470,37 @@ pub fn context(request: &Request) -> String {
     while let Some(fewer) = smaller(&head, &pieces, &keep, limit, request.budget) {
         keep = fewer;
     }
-    render(&head, &pieces, &keep, request.budget)
+    let text = without_size(&head, &pieces, &keep);
+    let tokens = estimate(&text);
+    Context {
+        target: name,
+        pieces: printed(&head, &pieces, &keep)
+            .into_iter()
+            .cloned()
+            .collect(),
+        omitted: omitted(&pieces, &keep),
+        tokens,
+        budget: request.budget.map(|budget| budget.0),
+        markdown: text + &size_line(tokens, request.budget),
+    }
 }
 
 /// Whether each piece fits in what's left of `limit` after the pieces before it.
 fn first_fit(head: &Head, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
-    let mut size = chars(&head.header) + chars(&head.target);
+    let mut size = chars(&head.header) + chars(&head.target.markdown);
     let mut opened: Vec<Section> = Vec::new();
     let mut keep = Vec::new();
     for piece in pieces {
-        let heading = match opened.contains(&piece.section) {
+        let section = piece.kind.section();
+        let heading = match opened.contains(&section) {
             true => 0,
-            false => chars(piece.section.heading()),
+            false => chars(section.heading()),
         };
-        let added = heading + chars(&piece.text);
+        let added = heading + chars(&piece.markdown);
         let fits = limit.is_none_or(|limit| size + added <= limit);
         if fits {
             size += added;
-            opened.push(piece.section);
+            opened.push(section);
         }
         keep.push(fits);
     }
@@ -366,49 +532,60 @@ fn smaller(
         .find(|fewer| chars(&render(head, pieces, fewer, budget)) < size)
 }
 
-/// The kept pieces by section, and what's left out in fill order.
 fn render(head: &Head, pieces: &[Piece], keep: &[bool], budget: Option<Budget>) -> String {
+    let text = without_size(head, pieces, keep);
+    let size = size_line(estimate(&text), budget);
+    text + &size
+}
+
+/// The kept pieces by section, each section under its heading, and what's left out in fill
+/// order: everything but the estimated size.
+fn without_size(head: &Head, pieces: &[Piece], keep: &[bool]) -> String {
     let mut out = head.header.clone();
-    let pieces_kept = pieces.iter().zip(keep).filter(|(_, kept)| **kept);
-    let mut kept: Vec<&Piece> = pieces_kept.map(|(piece, _)| piece).collect();
-    kept.sort_by_key(|piece| piece.section);
-    let (before, after): (Vec<&Piece>, Vec<&Piece>) = kept
-        .into_iter()
-        .partition(|piece| piece.section < Section::Ancestors);
-    push_sections(&mut out, &before);
-    out.push_str(&head.target);
-    push_sections(&mut out, &after);
-    let omitted = omitted(pieces, keep);
-    out.push('\n');
-    if !omitted.is_empty() {
-        out.push_str(&format!("Omitted for budget: {}\n", omitted.join(", ")));
+    let mut opened: Option<Section> = None;
+    for piece in printed(head, pieces, keep) {
+        let section = piece.kind.section();
+        if opened != Some(section) {
+            out.push_str(section.heading());
+            opened = Some(section);
+        }
+        out.push_str(&piece.markdown);
     }
-    let size = grouped(estimate(&out));
-    let of_budget = budget.map(|b| format!(" of {}", grouped(b.0)));
-    let of_budget = of_budget.unwrap_or_default();
-    out.push_str(&format!("Estimated size: {size}{of_budget} tokens\n"));
+    let omitted = omitted(pieces, keep).into_iter();
+    let names: Vec<String> = omitted
+        .map(|left_out| format!("{} ({} tokens)", left_out.name, grouped(left_out.tokens)))
+        .collect();
+    out.push('\n');
+    if !names.is_empty() {
+        out.push_str(&format!("Omitted for budget: {}\n", names.join(", ")));
+    }
     out
 }
 
-/// `pieces`, sorted by section, each section under its heading.
-fn push_sections(out: &mut String, pieces: &[&Piece]) {
-    let mut opened: Option<Section> = None;
-    for piece in pieces {
-        if opened != Some(piece.section) {
-            out.push_str(piece.section.heading());
-            opened = Some(piece.section);
-        }
-        out.push_str(&piece.text);
-    }
+fn size_line(tokens: u32, budget: Option<Budget>) -> String {
+    let of_budget = budget.map(|b| format!(" of {}", grouped(b.0)));
+    let of_budget = of_budget.unwrap_or_default();
+    format!("Estimated size: {}{of_budget} tokens\n", grouped(tokens))
+}
+
+/// The target and the kept pieces, in the order they're printed.
+fn printed<'a>(head: &'a Head, pieces: &'a [Piece], keep: &[bool]) -> Vec<&'a Piece> {
+    let pieces_kept = pieces.iter().zip(keep).filter(|(_, kept)| **kept);
+    let kept = pieces_kept.map(|(piece, _)| piece);
+    let mut printed: Vec<&Piece> = [&head.target].into_iter().chain(kept).collect();
+    printed.sort_by_key(|piece| piece.kind.section());
+    printed
 }
 
 /// Each piece that's left out, with its size, in fill order.
-fn omitted(pieces: &[Piece], keep: &[bool]) -> Vec<String> {
+fn omitted(pieces: &[Piece], keep: &[bool]) -> Vec<Omitted> {
     let left_out = pieces.iter().zip(keep).filter(|(_, kept)| !**kept);
     left_out
-        .map(|(piece, _)| {
-            let tokens = grouped(estimate(&piece.text));
-            format!("{} ({tokens} tokens)", piece.name)
+        .map(|(piece, _)| Omitted {
+            kind: piece.kind,
+            path: piece.path.clone(),
+            tokens: estimate(&piece.markdown),
+            name: piece.name.clone(),
         })
         .collect()
 }
@@ -451,19 +628,22 @@ fn header(name: &str, version: &DocsVersion) -> String {
 }
 
 /// The target node in full, which is always included.
-fn target(request: &Request) -> String {
+fn target(request: &Request) -> Piece {
     let entry = request.entry;
-    let kind = match entry.location {
+    let label = match entry.location {
         NodeLocation::Root => "Project",
         NodeLocation::Folder(_) => "Feature",
     };
-    let mut out = format!(
-        "\n## {kind}: {}\nPath: {}\n",
-        request.tree.heading(entry),
-        folder(request, entry)
-    );
-    push_body(&mut out, body(request, entry));
-    out
+    let heading = format!("{label}: {}", request.tree.heading(entry));
+    let folder = folder(request, entry);
+    let file = file_name(request, entry);
+    Piece::node(
+        PieceKind::Target,
+        heading,
+        Some(&folder),
+        file,
+        body(request, entry),
+    )
 }
 
 fn folder(request: &Request, entry: &Entry) -> String {
@@ -490,11 +670,9 @@ fn body<'a>(request: &'a Request, entry: &'a Entry) -> &'a str {
     }
 }
 
-fn push_body(out: &mut String, body: &str) {
-    let body = body.trim_start_matches(['\n', '\r']).trim_end();
-    if !body.is_empty() {
-        out.push_str(&format!("\n{body}\n"));
-    }
+/// A body as the context prints it, without its leading blank lines or trailing space.
+fn trimmed(body: &str) -> &str {
+    body.trim_start_matches(['\n', '\r']).trim_end()
 }
 
 // In fill order: the target's decisions, each ancestor from the parent up to the root followed
@@ -525,14 +703,14 @@ fn pieces(request: &Request) -> Vec<Piece> {
     let linked_nodes = links.nodes.iter().filter(|file| !is_child(file));
     pieces.extend(linked_nodes.filter_map(|file| {
         let node = tree.entries.get(file)?;
-        Some(summary(request, Section::LinkedNodes, "", node))
+        Some(summary(request, PieceKind::LinkedNode, "", node))
     }));
     let unlisted = unreadable.into_iter().map(|doc| Listed::Path(doc.clone()));
     let listed: Vec<Listed> = unlisted.chain(links.listed.iter().cloned()).collect();
     pieces.extend(listed.iter().map(|link| other_link(request, link)));
     pieces.extend(request.issue.into_iter().flat_map(issue_pieces));
     let around = children.iter();
-    pieces.extend(around.map(|child| summary(request, Section::Around, "Child: ", child)));
+    pieces.extend(around.map(|child| summary(request, PieceKind::Child, "Child: ", child)));
     pieces
 }
 
@@ -565,18 +743,15 @@ fn decision_piece(
     parsed: &ParsedRecord,
 ) -> Option<Piece> {
     let file = request.snapshot.tree_root.join(parsed.file.as_str());
-    let name = file.map(|file| (request.shown)(&file)).unwrap_or_default();
+    let path = file.map(|file| (request.shown)(&file));
+    let name = path.clone().unwrap_or_default();
     let text = match (&parsed.record, &parsed.id) {
         (Some(record), _) if is_shown(record) => decision_line(records, record),
         (Some(_), _) => return None,
-        (None, Some(id)) => format!("- {id} (has problems): {name}\n"),
-        (None, None) => format!("- {name} (has problems)\n"),
+        (None, Some(id)) => format!("- {id} (has problems): {name}"),
+        (None, None) => format!("- {name} (has problems)"),
     };
-    Some(Piece {
-        section: Section::Decisions,
-        text,
-        name,
-    })
+    Some(item(PieceKind::Decision, path, text))
 }
 
 /// The decision's ID, status and title, the first sentence of its Why paragraph, and the ID
@@ -595,7 +770,6 @@ fn decision_line(records: &[ParsedRecord], record: &Record) -> String {
             text.push_str(&format!(": {}", older.title.as_str()));
         }
     }
-    text.push('\n');
     text
 }
 
@@ -693,41 +867,36 @@ fn ends_sentence(text: &str, end: usize) -> bool {
 
 fn ancestor_piece(request: &Request, ancestor: &Entry, is_parent: bool) -> Piece {
     let heading = request.tree.heading(ancestor);
-    let mut text = match (&ancestor.location, is_parent) {
-        (NodeLocation::Root, _) => format!("\n## Project: {heading}\n"),
-        (_, true) => format!(
-            "\n## Parent: {heading}\nPath: {}\n",
-            folder(request, ancestor)
+    let folder = folder(request, ancestor);
+    let (kind, heading, folder) = match (&ancestor.location, is_parent) {
+        (NodeLocation::Root, _) => (PieceKind::Project, format!("Project: {heading}"), None),
+        (_, true) => (
+            PieceKind::Parent,
+            format!("Parent: {heading}"),
+            Some(&folder),
         ),
-        (_, false) => format!(
-            "\n## Ancestor: {heading}\nPath: {}\n",
-            folder(request, ancestor)
+        (_, false) => (
+            PieceKind::Ancestor,
+            format!("Ancestor: {heading}"),
+            Some(&folder),
         ),
     };
-    push_body(&mut text, body(request, ancestor));
-    Piece {
-        section: Section::Ancestors,
-        text,
-        name: file_name(request, ancestor),
-    }
+    let file = file_name(request, ancestor);
+    let folder = folder.map(String::as_str);
+    Piece::node(kind, heading, folder, file, body(request, ancestor))
 }
 
 /// The issue in full, then its parents as one line each, from the top down.
 fn issue_pieces(chain: &IssueChain) -> Vec<Piece> {
     let issue = &chain.issue;
-    let mut text = format!("\n## Issue: {} ({})\n", issue.title, notes(chain, issue));
-    push_body(&mut text, &issue.body.replace("\r\n", "\n"));
-    let mut pieces = vec![Piece {
-        section: Section::Issue,
-        text,
-        name: issue.reference.to_string(),
-    }];
+    let heading = format!("Issue: {} ({})", issue.title, notes(chain, issue));
+    let body = issue.body.replace("\r\n", "\n");
+    let text = trimmed(&body).to_owned();
+    let piece = Piece::new(PieceKind::Issue, heading, None, text);
+    let mut pieces = vec![piece.named(issue.reference.to_string())];
     if !chain.parents.is_empty() {
-        pieces.push(Piece {
-            section: Section::ParentWork,
-            text: parent_work(chain),
-            name: "parent work".to_owned(),
-        });
+        let parents = item(PieceKind::ParentWork, None, parent_work(chain));
+        pieces.push(parents.named("parent work".to_owned()));
     }
     pieces
 }
@@ -736,20 +905,22 @@ fn issue_pieces(chain: &IssueChain) -> Vec<Piece> {
 /// why.
 fn parent_work(chain: &IssueChain) -> String {
     let repo = chain.issue.reference.repo();
-    let mut out = String::new();
-    for (depth, parent) in chain.parents.iter().rev().enumerate() {
-        let line = match parent {
-            Ok(issue) => format!(
-                "{} {} ({})",
-                short(&issue.reference, repo),
-                issue.title,
-                notes(chain, issue)
-            ),
-            Err((reference, why)) => format!("{}: {why}", short(reference, repo)),
-        };
-        out.push_str(&format!("{}- {line}\n", "  ".repeat(depth)));
-    }
-    out
+    let parents = chain.parents.iter().rev().enumerate();
+    let lines: Vec<String> = parents
+        .map(|(depth, parent)| {
+            let line = match parent {
+                Ok(issue) => format!(
+                    "{} {} ({})",
+                    short(&issue.reference, repo),
+                    issue.title,
+                    notes(chain, issue)
+                ),
+                Err((reference, why)) => format!("{}: {why}", short(reference, repo)),
+            };
+            format!("{}- {line}", "  ".repeat(depth))
+        })
+        .collect();
+    lines.join("\n")
 }
 
 /// An issue's type, state and, when it has sub-issues, how many are done, as `work` shows them.
@@ -774,14 +945,17 @@ fn short(issue: &IssueRef, repo: &RepoRef) -> String {
     }
 }
 
+/// A linked doc in full, under its path.
 fn linked_doc(request: &Request, doc: &RepoPath) -> Option<Piece> {
     let text = request.snapshot.markdown.get(doc)?;
     let name = (request.shown)(doc);
-    Some(Piece {
-        section: Section::LinkedDocs,
-        text: format!("\n### {name}\n\n{}\n", text.trim()),
-        name,
-    })
+    let kind = PieceKind::LinkedDoc;
+    Some(Piece::new(
+        kind,
+        name.clone(),
+        Some(name),
+        text.trim().to_owned(),
+    ))
 }
 
 fn other_link(request: &Request, link: &Listed) -> Piece {
@@ -789,25 +963,21 @@ fn other_link(request: &Request, link: &Listed) -> Piece {
         Listed::Path(path) => (request.shown)(path),
         Listed::Url(url) => url.clone(),
     };
-    Piece {
-        section: Section::OtherLinks,
-        text: format!("- {name}\n"),
-        name,
-    }
+    item(
+        PieceKind::OtherLink,
+        Some(name.clone()),
+        format!("- {name}"),
+    )
 }
 
 /// A node as one line: its heading and, when its frontmatter is valid, its summary.
-fn summary(request: &Request, section: Section, label: &str, entry: &Entry) -> Piece {
+fn summary(request: &Request, kind: PieceKind, label: &str, entry: &Entry) -> Piece {
     let heading = request.tree.heading(entry);
     let text = match &entry.node {
-        Ok(node) => format!("- {label}{heading}: {}\n", node.summary.as_str()),
-        Err(_) => format!("- {label}{heading}\n"),
+        Ok(node) => format!("- {label}{heading}: {}", node.summary.as_str()),
+        Err(_) => format!("- {label}{heading}"),
     };
-    Piece {
-        section,
-        text,
-        name: file_name(request, entry),
-    }
+    item(kind, Some(file_name(request, entry)), text)
 }
 
 fn file_name(request: &Request, entry: &Entry) -> String {
