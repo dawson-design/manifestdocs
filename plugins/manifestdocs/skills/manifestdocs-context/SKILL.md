@@ -1,6 +1,6 @@
 ---
 name: manifestdocs-context
-description: Loads a feature's requirements, decisions, linked docs and neighbouring features from a Manifest Docs tree before planning or changing code for it. Use when starting work on a feature, issue or task in a project whose docs are a Manifest Docs tree, or when asked for a feature's context.
+description: Loads a feature's requirements, decisions, linked docs and neighbouring features from a Manifest Docs tree before planning or changing code for it. Use when starting work on a feature, issue or task in a project whose docs are a Manifest Docs tree, or when asked for a feature's context. Not for writing issues; use manifestdocs-plan-issue.
 allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs tree:*), Bash(manifestdocs show:*)
 ---
 
