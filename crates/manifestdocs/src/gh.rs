@@ -7,7 +7,8 @@ use std::process::Command;
 
 use manifestdocs_core::refs::{Host, IssueRef, RepoRef};
 use manifestdocs_core::work::{
-    Fetched, Issue, IssueBody, IssueKey, IssueState, Parents, SubIssue, Takeovers, Unreadable,
+    Fetched, Issue, IssueBody, IssueKey, IssueState, IssueText, Parents, SubIssue, Takeovers,
+    Unreadable,
 };
 use serde_json::{Value, json};
 
@@ -188,10 +189,28 @@ fn next_page(search: &Value) -> Option<String> {
     more.then(|| cursor.to_owned())
 }
 
-/// The fields `work` and `stale` read for each issue, with its first 100 sub-issues.
-const ISSUE_FIELDS: &str = "fragment issue on Issue { number title state body createdAt issueType { name } \
+/// Which fields `fetch_hierarchy` reads for each issue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fields {
+    /// What `work` shows.
+    Work,
+    /// Also the body and creation time, which `stale` reads. A body can be 65 KB, so `work`
+    /// doesn't ask for it.
+    WithText,
+}
+
+/// The fields every issue is read with, and its first 100 sub-issues.
+const ISSUE_FIELDS: &str = "number title state issueType { name } \
     parent { number repository { nameWithOwner } } \
-    subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } } }";
+    subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } }";
+
+fn fragment(fields: Fields) -> String {
+    let text = match fields {
+        Fields::Work => "",
+        Fields::WithText => "body createdAt ",
+    };
+    format!("fragment issue on Issue {{ {text}{ISSUE_FIELDS} }}")
+}
 
 /// Reads `issues` and their sub-issues at any depth, level by level until none are left: one
 /// query per repo for each level, in batches of up to 100 issues. It reads an issue in
@@ -201,13 +220,14 @@ pub fn fetch_hierarchy(
     host: &Host,
     issues: &[IssueRef],
     takeovers: &Takeovers,
+    fields: Fields,
 ) -> Result<Fetched, GhError> {
     let mut fetched = Fetched::new();
     let mut level = issues.to_vec();
     while !level.is_empty() {
         let mut next = Vec::new();
         for (repo, numbers) in by_repo(&level, |key| fetched.contains_key(key)) {
-            for (reference, issue) in fetch_issues(host, &repo, &numbers, takeovers)? {
+            for (reference, issue) in fetch_issues(host, &repo, &numbers, takeovers, fields)? {
                 let key = IssueKey::from(&reference);
                 if let (Ok(issue), false) = (&issue, takeovers.contains_key(&key)) {
                     next.extend(issue.sub_issues.iter().filter_map(|sub| match sub {
@@ -292,11 +312,12 @@ fn fetch_issues(
     repo: &RepoRef,
     numbers: &[u64],
     takeovers: &Takeovers,
+    fields: Fields,
 ) -> Result<Vec<(IssueRef, IssueOrWhy)>, GhError> {
     let mut issues = Vec::new();
     for batch in numbers.chunks(BATCH) {
         let query = aliased_query(batch, "...issue");
-        let query = format!("{query} {ISSUE_FIELDS}");
+        let query = format!("{query} {}", fragment(fields));
         let response = graphql(host, &repo_fields(&query, repo))?;
         let read = |value: &Value, alias: &str| read_issue(value, alias, repo, &response);
         for (number, answer) in read_aliases(&response, batch, read).map_err(GhError::Failed)? {
@@ -409,10 +430,17 @@ fn read_issue(value: &Value, alias: &str, repo: &RepoRef, response: &Value) -> O
             .map(str::to_owned),
         parent: value.get("parent").and_then(listed_issue),
         sub_issues: listed_sub_issues(sub_issues, response, &nodes),
-        body: value.get("body")?.as_str()?.to_owned(),
-        created_at: value.get("createdAt")?.as_str()?.to_owned(),
+        text: issue_text(value),
     };
     Some(Read(issue, next_page(sub_issues)))
+}
+
+/// The body and creation time, when the query asked for them.
+fn issue_text(value: &Value) -> Option<IssueText> {
+    Some(IssueText {
+        body: value.get("body")?.as_str()?.to_owned(),
+        created_at: value.get("createdAt")?.as_str()?.to_owned(),
+    })
 }
 
 /// An issue in a list, as `{ number repository { nameWithOwner } }`.
@@ -657,8 +685,10 @@ mod tests {
                 issue_type: Some("Epic".into()),
                 parent: Some(issue_ref("acme/roadmap#1")),
                 sub_issues: vec![SubIssue::Issue(issue_ref("acme/web#3"))],
-                body: "spec-ref: 4f1c2ab".into(),
-                created_at: "2026-10-01T09:30:00Z".into(),
+                text: Some(IssueText {
+                    body: "spec-ref: 4f1c2ab".into(),
+                    created_at: "2026-10-01T09:30:00Z".into(),
+                }),
             }
         );
     }

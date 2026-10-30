@@ -121,6 +121,7 @@ recipes/search/search.md:12: error: broken link `ranking.md`
 | `decide --file <path or -> [--dry-run] [--unattended] [--out dir] [--json]` | Writes a decision record and prints its path; see [Record a decision](#record-a-decision) |
 | `decisions [id or path] [--json] [--ref ref]` | Lists decision records for a node and its ancestors, or for the whole tree |
 | `work <id or path> [--json] [--ref ref]` | Lists the issues a node links to in `work`, with their sub-issues at any depth, each with its issue type, open or closed state and how many sub-issues are done. Needs `gh` and a `github` block, and exits 1 when an issue can't be read |
+| `stale [--json]` | Lists the open linked issues whose node changed after their `spec-ref`, or after the docs commit when they were created, with a summary of the changed files. Needs `gh`, a `github` block and the docs clone's full history, and exits 1 when an issue is stale or can't be checked |
 
 With `--json`, a command prints one JSON object for scripts, in the versioned schema in [the CLI spec](design/cli/cli.md#json-output), and exits with the same code as text. Paths in arguments and output are relative to the current folder. `check` exits 1 when the tree has errors, so it can gate docs PRs in CI, or on warnings too with `--strict`, and `show` exits 1 when the node's frontmatter has errors. Every command exits 2 when it can't run.
 
@@ -170,7 +171,7 @@ In a workspace folder that holds the code repos and a docs repo, put one beside 
 tree: cookbook-docs
 ```
 
-`check`, `tree`, `show` and `decide` read the docs clone's working tree, so you see your own edits. From another repo, `context`, `decisions` and `work` read the docs clone's default branch, `origin/HEAD`, so a clone left on a feature branch doesn't change what an agent reads. They never fetch, so they read the clone as of its last `git fetch`, and when `origin/HEAD` isn't set, they print the `git remote set-head` command that sets it. `tree`, `show`, `context`, `check`, `decisions` and `work` take `--ref <ref>` to read another branch, tag or commit.
+`check`, `tree`, `show` and `decide` read the docs clone's working tree, so you see your own edits. From another repo, `context`, `decisions`, `work` and `stale` read the docs clone's default branch, `origin/HEAD`, so a clone left on a feature branch doesn't change what an agent reads. They never fetch, so they read the clone as of its last `git fetch`, and when `origin/HEAD` isn't set, they print the `git remote set-head` command that sets it. `tree`, `show`, `context`, `check`, `decisions` and `work` take `--ref <ref>` to read another branch, tag or commit.
 
 ## Develop
 

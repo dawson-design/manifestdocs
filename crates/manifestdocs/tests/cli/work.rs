@@ -9,7 +9,7 @@ use crate::support::{Fixture, GhIssue, node};
 
 const GITHUB: &str = "name: demo\ngithub:\n  host: github.com\n  docs_repo: acme/cookbook-docs\n";
 
-const ISSUE_QUERY: &str = "fragment issue on Issue { number title state body createdAt issueType { name } \
+const ISSUE_QUERY: &str = "fragment issue on Issue { number title state issueType { name } \
     parent { number repository { nameWithOwner } } \
     subIssues(first: 100) { pageInfo { hasNextPage endCursor } nodes { number repository { nameWithOwner } } } }";
 

@@ -201,6 +201,13 @@ pub struct Issue {
     pub parent: Option<IssueRef>,
     /// In GitHub's order.
     pub sub_issues: Vec<SubIssue>,
+    /// `None` unless the query asked for it, as `stale` does.
+    pub text: Option<IssueText>,
+}
+
+/// An issue's body and creation time, which `stale` reads and `work` doesn't.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IssueText {
     pub body: String,
     /// RFC 3339, such as `2026-10-01T09:30:00Z`.
     pub created_at: String,

@@ -2,6 +2,7 @@
 //! planned against, read from GitHub through `gh` and from the docs clone's history. It only
 //! reports.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,7 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, anyhow, bail};
 use manifestdocs_core::check::Snapshot;
 use manifestdocs_core::config::TreeConfig;
+use manifestdocs_core::paths::{RepoPath, TreePath};
 use manifestdocs_core::refs::{Host, IssueRef};
 use manifestdocs_core::stale::{
     Baseline, Linked, Watched, is_commit_id, issues_to_read, linked_issues, watched,
@@ -35,31 +37,28 @@ pub fn run(json: bool) -> Result<ExitCode> {
     let Some(github) = &tree.config.github else {
         bail!("`stale` reads issues from GitHub, and manifestdocs.yaml has no `github` block");
     };
+    let mut history = History::open(&docs, &cwd)?;
     let named = search(&github.host, &tree.config, &snapshot)?;
     let to_read = issues_to_read(&tree, &named);
-    let fetched = gh::fetch_hierarchy(&github.host, &to_read, &Takeovers::new())?;
+    let fields = gh::Fields::WithText;
+    let fetched = gh::fetch_hierarchy(&github.host, &to_read, &Takeovers::new(), fields)?;
     let linked = linked_issues(&tree, &fetched, &named);
-    let history = History::open(&docs, &cwd, linked.iter().any(needs_default_branch))?;
+    if linked.iter().any(needs_default_branch) {
+        history.read_default_branch()?;
+    }
     let context = Context {
         tree: &tree,
         snapshot: &snapshot,
         docs: &docs,
         cwd: &cwd,
     };
-    let checked: Vec<Checked> = linked
-        .iter()
-        .map(|linked| history.check(&context, linked))
-        .collect::<Result<_>>()?;
+    let checked = history.check_all(&context, &linked)?;
     match json {
         true => json::data("stale", data(&checked, &context))?,
         false => write_stdout(&render(&checked, &context))?,
     }
     let failed = checked.iter().any(|item| item.outcome.is_reported());
-    Ok(if failed {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(ExitCode::from(u8::from(failed)))
 }
 
 /// The issues in the docs repo and the nodes' repos whose bodies have a `feature:` line.
@@ -100,10 +99,12 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    fn watched(&self, node: &Entry) -> PathSet {
+    /// The files `node` owns, and didn't own at the baseline whose files are `at_baseline`.
+    fn watched(&self, node: &Entry, at_baseline: Option<&BTreeSet<RepoPath>>) -> PathSet {
         let snapshot = self.snapshot;
+        let tree_root = &snapshot.tree_root;
         let Watched { folder, excluded } =
-            watched(self.tree, node, &snapshot.tree_root, &snapshot.paths);
+            watched(self.tree, node, tree_root, &snapshot.paths, at_baseline);
         PathSet {
             folder: folder.to_string(),
             excluded: excluded.iter().map(ToString::to_string).collect(),
@@ -123,12 +124,34 @@ impl Context<'_> {
     }
 }
 
-/// The docs clone's history: the commit read, and the default branch when an issue without
-/// a `spec-ref:` needs it.
+/// The docs clone's history: the commit read, the default branch when an issue without a
+/// `spec-ref:` needs it, and what's been read, since many issues share a node and a baseline.
 struct History {
     clone: PathBuf,
+    /// The clone as the current folder names it, for messages.
+    shown: String,
+    /// The version read, as messages name it: `HEAD` inside the docs clone.
+    head_name: String,
     head: Commit,
     default_branch: Option<Commit>,
+    /// The default branch's commit before each issue creation time.
+    before: BTreeMap<String, Option<Commit>>,
+    /// The files in each baseline commit.
+    files: BTreeMap<String, BTreeSet<RepoPath>>,
+    /// Each node file's history after each baseline commit.
+    compared: BTreeMap<(TreePath, Option<String>), Compared>,
+}
+
+/// A node's history after a baseline.
+#[derive(Clone)]
+enum Compared {
+    Current,
+    Changed {
+        latest: Commit,
+        files: Vec<FileChange>,
+    },
+    /// Why the diff couldn't be read, such as a partial clone missing a file.
+    NoDiff(String),
 }
 
 /// One linked issue, and what comparing it found.
@@ -142,7 +165,8 @@ struct Checked<'a> {
 enum Outcome<'a> {
     Current,
     Stale(Change<'a>),
-    BadSpecRef(&'a str),
+    /// Why the issue couldn't be compared.
+    NotChecked(String),
     Unread(&'a Unreadable),
 }
 
@@ -162,34 +186,57 @@ struct Change<'a> {
 }
 
 impl History {
-    fn open(docs: &Docs, cwd: &Path, needs_default_branch: bool) -> Result<Self> {
+    /// Fails when the tree isn't in git, or the clone is shallow, since a shallow clone's
+    /// history stops early and every issue would look older than the docs.
+    fn open(docs: &Docs, cwd: &Path) -> Result<Self> {
         let clone = docs.roots.repo_root.clone();
         let shown = relative(&clone, cwd);
         if !clone.join(".git").exists() {
             let tree = relative(&docs.roots.tree_root, cwd);
             bail!("`stale` compares the docs' history, and the tree `{tree}` isn't in a git repo");
         }
-        let head = match &docs.source {
-            DocsSource::Commit { reference, .. } => reference.as_str(),
-            DocsSource::WorkingTree => "HEAD",
+        if git::is_shallow(&clone)? {
+            bail!(
+                "the docs clone `{shown}` is shallow, so `stale` can't read its history; fetch \
+                 all of it, such as with `git -C {shown} fetch --unshallow`, or `fetch-depth: 0` \
+                 for actions/checkout"
+            );
+        }
+        let head_name = match &docs.source {
+            DocsSource::Commit { reference, .. } => reference.clone(),
+            DocsSource::WorkingTree => "HEAD".to_owned(),
         };
-        let resolve = |reference: &str| {
-            git::resolve(&clone, reference)
-                .ok_or_else(|| anyhow!("no commit `{reference}` in the docs clone `{shown}`"))
-        };
-        let head = resolve(head)?;
-        let default_branch = match needs_default_branch {
-            true => Some(resolve(&files::default_branch_of(&clone, &shown)?)?),
-            false => None,
-        };
+        let head = resolve(&clone, &shown, &head_name)?;
         Ok(Self {
             clone,
+            shown,
+            head_name,
             head,
-            default_branch,
+            default_branch: None,
+            before: BTreeMap::new(),
+            files: BTreeMap::new(),
+            compared: BTreeMap::new(),
         })
     }
 
-    fn check<'a>(&self, context: &Context, linked: &'a Linked<'a>) -> Result<Checked<'a>> {
+    fn read_default_branch(&mut self) -> Result<()> {
+        let branch = files::default_branch_of(&self.clone, &self.shown)?;
+        self.default_branch = Some(resolve(&self.clone, &self.shown, &branch)?);
+        Ok(())
+    }
+
+    fn check_all<'a>(
+        &mut self,
+        context: &Context,
+        linked: &'a [Linked<'a>],
+    ) -> Result<Vec<Checked<'a>>> {
+        linked
+            .iter()
+            .map(|linked| self.check(context, linked))
+            .collect()
+    }
+
+    fn check<'a>(&mut self, context: &Context, linked: &'a Linked<'a>) -> Result<Checked<'a>> {
         Ok(match linked {
             Linked::Unread {
                 node,
@@ -209,44 +256,120 @@ impl History {
                 node,
                 reference: Some(&issue.reference),
                 issue: Some(issue),
-                outcome: self.compare(baseline, &context.watched(node))?,
+                outcome: self.compare(context, node, baseline)?,
             },
         })
     }
 
-    fn compare<'a>(&self, baseline: &'a Baseline, paths: &PathSet) -> Result<Outcome<'a>> {
-        let since = match baseline {
-            Baseline::SpecRef(spec_ref) => match self.spec_ref(spec_ref) {
-                Some(commit) => Some(commit),
-                None => return Ok(Outcome::BadSpecRef(spec_ref)),
-            },
-            Baseline::Created(time) => {
-                let branch = self.default_branch.as_ref();
-                let branch = branch.context("the docs' default branch wasn't read")?;
-                git::commit_before(&self.clone, &branch.id, time)?
-            }
+    fn compare<'a>(
+        &mut self,
+        context: &Context,
+        node: &Entry,
+        baseline: &'a Baseline,
+    ) -> Result<Outcome<'a>> {
+        let since = match self.since(baseline)? {
+            Ok(since) => since,
+            Err(why) => return Ok(Outcome::NotChecked(why)),
         };
-        let base = since.as_ref().map(|since| since.id.as_str());
-        let Some(latest) = git::latest_change(&self.clone, base, &self.head.id, paths)? else {
-            return Ok(Outcome::Current);
-        };
-        let files = git::diff_summary(&self.clone, base, &latest.id, paths)?;
-        Ok(Outcome::Stale(Change {
-            baseline,
-            since,
-            latest,
-            files,
-        }))
+        Ok(match self.compared(context, node, since.as_ref())? {
+            Compared::Current => Outcome::Current,
+            Compared::NoDiff(why) => Outcome::NotChecked(why),
+            Compared::Changed { latest, files } => Outcome::Stale(Change {
+                baseline,
+                since,
+                latest,
+                files,
+            }),
+        })
     }
 
-    fn spec_ref(&self, spec_ref: &str) -> Option<Commit> {
-        let id = is_commit_id(spec_ref).then_some(spec_ref)?;
-        git::resolve(&self.clone, id)
+    /// The commit an issue was planned against, `None` when no docs commit is older than the
+    /// issue, or why its `spec-ref` can't be used.
+    fn since(&mut self, baseline: &Baseline) -> Result<Result<Option<Commit>, String>> {
+        match baseline {
+            Baseline::SpecRef(spec_ref) => Ok(self.spec_ref(spec_ref)?.map(Some)),
+            Baseline::Created(time) => Ok(Ok(self.before(time)?)),
+        }
+    }
+
+    /// A `spec-ref` outside the history read, such as on a branch that was squash-merged or
+    /// never merged, would look stale forever, so it isn't used.
+    fn spec_ref(&self, spec_ref: &str) -> Result<Result<Commit, String>> {
+        let commit = is_commit_id(spec_ref).then(|| git::resolve(&self.clone, spec_ref));
+        let Some(commit) = commit.flatten() else {
+            let why = format!("its spec-ref `{spec_ref}` isn't a commit in the docs clone");
+            return Ok(Err(why));
+        };
+        if !git::is_ancestor(&self.clone, &commit.id, &self.head.id)? {
+            let head = &self.head_name;
+            let why = format!("its spec-ref `{spec_ref}` isn't in the history of `{head}`");
+            return Ok(Err(why));
+        }
+        Ok(Ok(commit))
+    }
+
+    fn before(&mut self, time: &str) -> Result<Option<Commit>> {
+        if let Some(found) = self.before.get(time) {
+            return Ok(found.clone());
+        }
+        let branch = self.default_branch.as_ref();
+        let branch = branch.context("the docs' default branch wasn't read")?;
+        let found = git::commit_before(&self.clone, &branch.id, time)?;
+        self.before.insert(time.to_owned(), found.clone());
+        Ok(found)
+    }
+
+    fn compared(
+        &mut self,
+        context: &Context,
+        node: &Entry,
+        since: Option<&Commit>,
+    ) -> Result<Compared> {
+        let key = (node.file.clone(), since.map(|since| since.id.clone()));
+        if let Some(found) = self.compared.get(&key) {
+            return Ok(found.clone());
+        }
+        let at_baseline = since.map(|since| self.files_at(&since.id)).transpose()?;
+        let paths = context.watched(node, at_baseline);
+        let found = self.diff(since, &paths)?;
+        self.compared.insert(key, found.clone());
+        Ok(found)
+    }
+
+    fn files_at(&mut self, id: &str) -> Result<&BTreeSet<RepoPath>> {
+        if !self.files.contains_key(id) {
+            let files = git::files_at(&self.clone, id)?.into_iter();
+            let files = files.filter_map(|(path, _)| RepoPath::new(&path)).collect();
+            self.files.insert(id.to_owned(), files);
+        }
+        Ok(&self.files[id])
+    }
+
+    /// A diff that can't be read, such as when a partial clone lacks a file's contents,
+    /// leaves only this issue unchecked, since the tool never fetches.
+    fn diff(&self, since: Option<&Commit>, paths: &PathSet) -> Result<Compared> {
+        let base = since.map(|since| since.id.as_str());
+        let Some(latest) = git::latest_change(&self.clone, base, &self.head.id, paths)? else {
+            return Ok(Compared::Current);
+        };
+        Ok(
+            match git::diff_summary(&self.clone, base, &latest.id, paths) {
+                Ok(files) => Compared::Changed { latest, files },
+                Err(error) => {
+                    let from = since.map_or("the empty tree", |since| since.short.as_str());
+                    let to = &latest.short;
+                    Compared::NoDiff(format!(
+                        "the docs clone can't diff {from} with {to}: {error:#}"
+                    ))
+                }
+            },
+        )
     }
 }
 
-fn bad_spec_ref(spec_ref: &str) -> String {
-    format!("its spec-ref `{spec_ref}` isn't a commit in the docs clone")
+fn resolve(clone: &Path, shown: &str, reference: &str) -> Result<Commit> {
+    git::resolve(clone, reference)
+        .ok_or_else(|| anyhow!("no commit `{reference}` in the docs clone `{shown}`"))
 }
 
 /// A block for each stale issue or issue that couldn't be checked, then a summary line.
@@ -273,7 +396,7 @@ fn push_block(item: &Checked, context: &Context, out: &mut String) {
     let why = match &item.outcome {
         Outcome::Current => return,
         Outcome::Stale(change) => return push_change(change, context, out),
-        Outcome::BadSpecRef(spec_ref) => format!("can't check it: {}", bad_spec_ref(spec_ref)),
+        Outcome::NotChecked(why) => format!("can't check it: {why}"),
         Outcome::Unread(why) => reason(why),
     };
     let _ = writeln!(out, "  {why}");
@@ -380,9 +503,7 @@ fn data<'a>(checked: &'a [Checked<'a>], context: &Context) -> StaleData<'a> {
         match &item.outcome {
             Outcome::Current => {}
             Outcome::Stale(change) => data.stale.extend(stale_issue(item, change, context)),
-            Outcome::BadSpecRef(spec_ref) => {
-                data.not_checked.push(not_checked(bad_spec_ref(spec_ref)))
-            }
+            Outcome::NotChecked(why) => data.not_checked.push(not_checked(why.clone())),
             Outcome::Unread(why) => data.not_checked.push(not_checked(reason(why))),
         }
     }
@@ -395,6 +516,7 @@ fn stale_issue<'a>(
     context: &Context,
 ) -> Option<StaleIssue<'a>> {
     let issue = item.issue?;
+    let text = issue.text.as_ref()?;
     let commit = |commit: &'a Commit| JsonCommit {
         commit: &commit.id,
         date: &commit.date,
@@ -408,7 +530,7 @@ fn stale_issue<'a>(
             Baseline::SpecRef(spec_ref) => Some(spec_ref),
             Baseline::Created(_) => None,
         },
-        created_at: &issue.created_at,
+        created_at: &text.created_at,
         since: change.since.as_ref().map(commit),
         changed_in: commit(&change.latest),
         changes: change

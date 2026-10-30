@@ -24,7 +24,9 @@ Manifest Docs reads GitHub's sub-issues, at any depth. In a repo without them, e
 
 `mfd stale` compares each open linked issue's `spec-ref`, or its creation-time commit, with the latest commit that touched any file its node owns (see [ownership](../tree-format/tree-format.md#ownership)), images included. For each stale issue it prints the issue, the node and a diff summary of what changed. It only reports. A person or an agent decides whether to comment on the issue.
 
-A node's linked issues are its work items, their sub-issues unless a deeper node lists them, and the issues whose `feature:` line names it, with their sub-issues. `stale` reads the docs version `work` reads and compares commits up to it, so uncommitted edits don't count. An issue `gh` can't read, or whose `spec-ref` isn't a commit in the docs clone, is listed as not checked.
+A node's linked issues are its work items, their sub-issues unless a deeper node lists them, and the issues whose `feature:` line names it, with their sub-issues. `stale` reads the docs version `work` reads and compares commits up to it, so uncommitted edits don't count. Folders that were deeper nodes, nested trees or records folders at the baseline are left out too, so a child node that moved isn't the parent's change.
+
+An issue is listed as not checked when `gh` can't read it, when its `spec-ref` isn't a commit in the history read, such as one on a branch that was squash-merged or never merged, or when the clone can't diff the node's files, as a partial clone without their contents can't, since the tool never fetches. A shallow clone is an error, because its history stops early: fetch all of it first.
 
 ## Writing to GitHub
 
