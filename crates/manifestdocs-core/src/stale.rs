@@ -3,9 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::config;
+use crate::config::{self, TreeConfig};
 use crate::id::NodeId;
-use crate::layout::records_folder;
+use crate::layout::{layout, records_folder};
 use crate::paths::{RepoPath, TreePath};
 use crate::refs::IssueRef;
 use crate::tree::{Entry, Tree};
@@ -127,11 +127,12 @@ impl<'a> Walk<'a> {
 
     /// `issue`, when it's open, then its sub-issues.
     fn push(&self, issue: &'a Issue, seen: &mut BTreeSet<IssueKey>, linked: &mut Vec<Linked<'a>>) {
-        if issue.state == IssueState::Open {
+        // `stale` reads issues with their text, so an open issue always has a baseline.
+        if let (IssueState::Open, Some(baseline)) = (issue.state, baseline(issue)) {
             linked.push(Linked::Open {
                 node: self.node,
                 issue,
-                baseline: baseline(issue),
+                baseline,
             });
         }
         for sub in &issue.sub_issues {
@@ -151,11 +152,12 @@ impl<'a> Walk<'a> {
     }
 }
 
-fn baseline(issue: &Issue) -> Baseline {
-    match IssueLinks::parse(&issue.body).spec_ref {
+fn baseline(issue: &Issue) -> Option<Baseline> {
+    let text = issue.text.as_ref()?;
+    Some(match IssueLinks::parse(&text.body).spec_ref {
         Some(spec_ref) => Baseline::SpecRef(spec_ref),
-        None => Baseline::Created(issue.created_at.clone()),
-    }
+        None => Baseline::Created(text.created_at.clone()),
+    })
 }
 
 /// The files a node owns, from the repo root: everything under its folder except deeper
@@ -168,28 +170,54 @@ pub struct Watched {
 }
 
 /// The files `entry` owns. `paths` are the repo's files, which locate its records folders.
+/// `at_baseline` are the files in the version an issue was planned against: the deeper
+/// nodes, nested trees and records folders there are left out too, so one that moved since
+/// isn't read as the node's own files deleted.
 pub fn watched(
     tree: &Tree,
     entry: &Entry,
     tree_root: &RepoPath,
     paths: &BTreeSet<RepoPath>,
+    at_baseline: Option<&BTreeSet<RepoPath>>,
 ) -> Watched {
     let folder = entry.location.folder();
     let nodes = tree.entries.values().map(|other| other.location.folder());
-    let in_tree = paths.iter().filter_map(|path| path.in_tree(tree_root));
-    let records = in_tree.filter_map(|file| records_folder(&file));
-    let config = TreePath::new(config::FILE_NAME);
-    let excluded: BTreeSet<TreePath> = nodes
+    let mut excluded: BTreeSet<TreePath> = nodes
         .chain(tree.nested_trees.iter().cloned())
-        .chain(records)
-        .chain(config)
-        .filter(|path| path.is_within(&folder))
+        .chain(records_folders(tree_root, paths))
+        .chain(TreePath::new(config::FILE_NAME))
         .collect();
+    if let Some(paths) = at_baseline {
+        excluded.extend(earlier_folders(&tree.config, tree_root, paths));
+    }
+    excluded.retain(|path| path.is_within(&folder));
     let repo_path = |path: &TreePath| tree_root.join(path.as_str());
     Watched {
         folder: repo_path(&folder).unwrap_or_else(|| tree_root.clone()),
         excluded: excluded.iter().filter_map(repo_path).collect(),
     }
+}
+
+fn records_folders<'a>(
+    tree_root: &'a RepoPath,
+    paths: &'a BTreeSet<RepoPath>,
+) -> impl Iterator<Item = TreePath> + 'a {
+    let in_tree = paths.iter().filter_map(|path| path.in_tree(tree_root));
+    in_tree.filter_map(|file| records_folder(&file))
+}
+
+/// The node folders, nested trees and records folders in an earlier version's `paths`. Its
+/// frontmatter isn't read, so a file in a node file's position counts as a node.
+fn earlier_folders(
+    config: &TreeConfig,
+    tree_root: &RepoPath,
+    paths: &BTreeSet<RepoPath>,
+) -> Vec<TreePath> {
+    let layout = layout(config, tree_root, paths);
+    let nodes = layout.node_files.iter().map(|file| file.location.folder());
+    let nested = layout.nested_trees.iter().cloned();
+    let records = records_folders(tree_root, paths);
+    nodes.chain(nested).chain(records).collect()
 }
 
 /// Whether `spec_ref` can be a commit ID: 4 to 64 hex digits, so a branch name or an
