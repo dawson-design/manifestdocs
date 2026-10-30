@@ -564,6 +564,13 @@ pub fn find_record<'a>(records: &'a [ParsedRecord], id: &DecisionId) -> Option<&
     records.iter().find(|record| record.id.as_ref() == Some(id))
 }
 
+/// The ID of the first record, in path order, that supersedes `id`.
+pub fn superseded_by<'a>(records: &'a [ParsedRecord], id: &DecisionId) -> Option<&'a DecisionId> {
+    let parsed = records.iter().filter_map(|parsed| parsed.record.as_ref());
+    let mut newer = parsed.filter(|record| record.supersedes.as_ref() == Some(id));
+    newer.next().map(|record| &record.id)
+}
+
 /// The records `record` supersedes, newest first, each with its file. The chain stops at a
 /// record that's missing, doesn't parse, or is already in it, since `check` doesn't detect
 /// cycles.

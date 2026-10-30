@@ -159,7 +159,7 @@ fn stops_when_the_argument_names_no_single_node() {
 
 /// A Search node with a chain of three page-size records, a record whose predecessor is
 /// missing, a record that supersedes itself, and a record whose frontmatter is broken.
-fn records(name: &str) -> Fixture {
+pub fn records(name: &str) -> Fixture {
     let root = node("fd-0a0001", "Cookbook");
     let search = node("fd-7c2e41", "Search");
     let newest = "---\nid: dc-3f1a8c2\nnode: fd-7c2e41\ntitle: \"Show 20 recipes per page\"\nstatus: accepted\ntopic: page-size\ndecided_by: octocat\ndate: 2026-10-28\nsource: [example-org/cookbook-web#212]\napplies_to: [example-org/cookbook-web:src/search/page.ts]\nsupersedes: dc-2b8e4c5\n---\n\n**Decision.** Show 20 recipes per page.\n\n**Why.** Readers rarely scroll past 20.\n";
