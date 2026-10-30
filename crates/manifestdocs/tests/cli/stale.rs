@@ -865,3 +865,35 @@ fn prints_an_issue_older_than_the_docs_as_json() {
         }])
     );
 }
+
+/// Planning sets an issue's spec-ref, then adds the issue to the node's `work`, so a commit
+/// that only changes `work` doesn't make the issue stale. A later change to the body does.
+#[test]
+fn ignores_a_change_that_only_adds_issues_to_the_nodes_work() {
+    let (fixture, first) = docs("stale-work-only", "", "");
+    let search = fixture.path("search/search.md");
+    fs::write(&search, feature("fd-000002", "Search", "acme/docs#41")).unwrap();
+    publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+    let planned = fixture.run_with_gh("", &["stale"]);
+    edit_search(&fixture, "", "acme/docs#41");
+    let edited = publish(&fixture, "", "2026-10-12T10:00:00Z");
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(planned.stdout, "1 open issue: none stale\n");
+    assert_eq!(planned.code, 0);
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Search (fd-000002, draft)  search/search.md\n  \
+             changed in {} (2026-10-12) after its spec-ref {} (2026-10-01)\n    \
+             search/search.md (+2 -1)\n\
+             \n\
+             1 open issue: 1 stale\n",
+            short(&fixture, "", &edited),
+            short(&fixture, "", &first)
+        )
+    );
+}

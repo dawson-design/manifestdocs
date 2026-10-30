@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::config::{self, TreeConfig};
+use crate::frontmatter::{Split, Value, split, values};
 use crate::id::NodeId;
 use crate::layout::{layout, records_folder};
 use crate::paths::{RepoPath, TreePath};
@@ -227,9 +228,55 @@ pub fn is_commit_id(spec_ref: &str) -> bool {
     hex && (4..=64).contains(&spec_ref.len())
 }
 
+/// Whether two versions of a node file differ only in the `work` field's value. Planning
+/// sets an issue's `spec-ref` and then adds the issue to `work`, which mustn't make it
+/// stale. Frontmatter that doesn't parse, or a field whose value can't be compared, such as
+/// a mapping, counts as a change.
+pub fn only_work_changed(before: &str, after: &str) -> bool {
+    match (without_work(before), without_work(after)) {
+        (Some(before), Some(after)) => before == after,
+        _ => false,
+    }
+}
+
+/// The frontmatter's fields other than `work`, and the body.
+fn without_work(text: &str) -> Option<(BTreeMap<String, Value>, &str)> {
+    let Split::Present(frontmatter) = split(text) else {
+        return None;
+    };
+    let mut fields = values(frontmatter.yaml).ok()?;
+    fields.remove("work");
+    let comparable = !fields.values().any(|value| *value == Value::Other);
+    comparable.then_some((fields, frontmatter.body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sees_when_only_the_work_list_changed() {
+        let file = |work: &str, rest: &str| {
+            format!("---\nid: fd-000002\ntitle: \"Search\"\n{work}\n{rest}---\n\n# Search\n")
+        };
+        let before = file("work: []", "");
+        for after in [
+            file("work: [acme/docs#41]", ""),
+            file("work:\n  - acme/docs#41\n  - acme/docs#42", ""),
+        ] {
+            assert!(only_work_changed(&before, &after), "{after}");
+        }
+        for after in [
+            format!("{}More.\n", file("work: [acme/docs#41]", "")),
+            file("work: [acme/docs#41]", "status: approved\n"),
+            file("work: []", "extra:\n  a: 1\n"),
+            "# Search\n".to_owned(),
+        ] {
+            assert!(!only_work_changed(&before, &after), "{after}");
+        }
+        let unparsable = file("work: [", "");
+        assert!(!only_work_changed(&unparsable, &unparsable));
+    }
 
     #[test]
     fn reads_only_hex_commit_ids_as_spec_refs() {

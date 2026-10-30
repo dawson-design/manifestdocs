@@ -14,7 +14,8 @@ use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::paths::{RepoPath, TreePath};
 use manifestdocs_core::refs::{Host, IssueRef};
 use manifestdocs_core::stale::{
-    Baseline, Linked, Watched, is_commit_id, issues_to_read, linked_issues, watched,
+    Baseline, Linked, Watched, is_commit_id, issues_to_read, linked_issues, only_work_changed,
+    watched,
 };
 use manifestdocs_core::tree::{Entry, Tree};
 use manifestdocs_core::work::{Issue, IssueBody, Takeovers, Unreadable, work_links};
@@ -331,9 +332,35 @@ impl History {
         }
         let at_baseline = since.map(|since| self.files_at(&since.id)).transpose()?;
         let paths = context.watched(node, at_baseline);
-        let found = self.diff(since, &paths)?;
+        let mut found = self.diff(since, &paths)?;
+        let node_file = context.snapshot.tree_root.join(node.file.as_str());
+        if let (Some(since), Some(node_file), Compared::Changed { latest, files }) =
+            (since, node_file, &found)
+            && self.work_only(&node_file, since, latest, files)?
+        {
+            found = Compared::Current;
+        }
         self.compared.insert(key, found.clone());
         Ok(found)
+    }
+
+    /// Whether the node file is the only file that changed, and only in its `work` list.
+    fn work_only(
+        &self,
+        node_file: &RepoPath,
+        since: &Commit,
+        latest: &Commit,
+        files: &[FileChange],
+    ) -> Result<bool> {
+        let [file] = files else {
+            return Ok(false);
+        };
+        if file.path != node_file.as_str() {
+            return Ok(false);
+        }
+        let before = git::text_at(&self.clone, &since.id, &file.path)?;
+        let after = git::text_at(&self.clone, &latest.id, &file.path)?;
+        Ok(only_work_changed(&before, &after))
     }
 
     fn files_at(&mut self, id: &str) -> Result<&BTreeSet<RepoPath>> {
