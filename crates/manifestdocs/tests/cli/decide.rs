@@ -777,6 +777,54 @@ fn unattended_marks_a_draft_it_supersedes_in_the_drafts_folder() {
 }
 
 #[test]
+fn unattended_rejects_a_supplied_accepted_status() {
+    let draft = DRAFT.replace("topic:", "status: accepted\ntopic:");
+    let fixture = cookbook(
+        "decide-unattended-accepted",
+        "name: demo\n",
+        &[("draft.md", &draft)],
+    );
+
+    let run = decide(&fixture, &["--file", "draft.md", "--unattended"]);
+
+    assert_eq!(
+        run.stdout,
+        "draft.md:4: error: status `accepted` isn't allowed: decide writes `proposed` in an unattended run\n  \
+         fix: remove `status`, and decide sets it\n\n1 error: nothing written\n"
+    );
+    assert_eq!(run.code, 1);
+    assert!(!fixture.path(".manifestdocs").exists());
+}
+
+#[test]
+fn warns_when_the_records_body_is_over_300_tokens() {
+    // With the Decision line, the body estimates at 301 tokens, one over the limit.
+    let why = format!("**Why.** {}\n", "x".repeat(855 - "**Why.** \n".len()));
+    let draft = DRAFT.replace("**Why.** Readers rarely scroll past 20 results.\n", &why);
+    let fixture = cookbook("decide-long-body", "name: demo\n", &[("draft.md", &draft)]);
+
+    let at_limit = cookbook(
+        "decide-body-at-limit",
+        "name: demo\n",
+        &[("draft.md", &draft.replace("xxx\n", "\n"))],
+    );
+
+    let run = decide(&fixture, &["--file", "draft.md"]);
+    let at_limit = decide(&at_limit, &["--file", "draft.md"]);
+
+    assert_eq!(
+        run.stderr,
+        "warning: record body is about 301 tokens, over 300; a choice that needs more is a spec change or an ADR\n"
+    );
+    assert_eq!(
+        at_limit.stderr, "",
+        "300 tokens is at the limit, not over it"
+    );
+    assert_eq!(run.stdout, format!("{WRITTEN}\n"));
+    assert_eq!(run.code, 0);
+}
+
+#[test]
 fn out_into_the_tree_marks_the_record_it_supersedes() {
     let fixture = superseding("decide-out-in-tree", OLDER_FILE, "2026-10-01");
 

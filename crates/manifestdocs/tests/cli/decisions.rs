@@ -78,6 +78,72 @@ fn ref_reads_the_records_on_another_branch() {
     assert_eq!(run.code, 0, "{}", run.stderr);
 }
 
+#[test]
+fn fails_with_the_set_head_command_when_origin_head_is_unset() {
+    let fixture = records_in_versions("decisions-no-origin-head");
+    let unset = ["remote", "set-head", "origin", "-d"];
+    git(&fixture, "work/docs", &unset);
+
+    let run = fixture.run("work/web", &["decisions"]);
+
+    assert_eq!(
+        run.stderr,
+        "error: the docs clone's `origin/HEAD` isn't set, so its default branch is unknown; \
+         set it with `git -C ../docs remote set-head origin --auto`\n"
+    );
+    assert_eq!(run.code, 2);
+}
+
+/// The tree is in the code repo, reached through the repo's own pointer, so the working
+/// tree is the docs clone and an uncommitted record is listed though `origin/HEAD` is set.
+#[test]
+fn reads_the_working_tree_when_the_tree_is_in_the_working_repo() {
+    let draft = record(
+        "dc-000000b",
+        "fd-7c2e41",
+        "Uncommitted",
+        "accepted",
+        "2026-10-02",
+    );
+    let fixture = Fixture::new(
+        "decisions-single-repo",
+        &[
+            (".manifestdocs/config.yaml", "tree: docs\n"),
+            ("src/main.rs", "fn main() {}\n"),
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/search/search.md", &node("fd-7c2e41", "Search")),
+        ],
+    );
+    fs::remove_dir_all(fixture.path(".git")).unwrap();
+    git(&fixture, "", &["init", "-q", "-b", "main"]);
+    git(&fixture, "", &["add", "-A"]);
+    git(&fixture, "", &["commit", "-q", "-m", "Add the tree"]);
+    git(
+        &fixture,
+        "",
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    let origin_head = [
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+    ];
+    git(&fixture, "", &origin_head);
+    let file = "docs/search/decisions/2026-10-02-draft.md";
+    fs::create_dir_all(fixture.path("docs/search/decisions")).unwrap();
+    fs::write(fixture.path(file), draft).unwrap();
+
+    let run = fixture.run("src", &["decisions", "fd-7c2e41"]);
+
+    assert_eq!(
+        run.stdout,
+        "Search (fd-7c2e41, draft)\n\
+         \x20 dc-000000b  accepted  2026-10-02  Uncommitted  ../docs/search/decisions/2026-10-02-draft.md\n"
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+}
+
 fn record(id: &str, node: &str, title: &str, status: &str, date: &str) -> String {
     format!(
         "---\nid: {id}\nnode: {node}\ntitle: \"{title}\"\nstatus: {status}\ntopic: t-{id}\ndate: {date}\n---\n\n**Decision.** {title}.\n"
