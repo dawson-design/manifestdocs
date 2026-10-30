@@ -35,7 +35,7 @@ Check for the binary with `command -v manifestdocs`. If it's missing, tell the u
    spec-ref: 3f9a1c2
    ```
 
-   - Say the outcome in a sentence, link to the node's requirement on the docs repo's default branch, and list its scenarios by name as acceptance criteria. Don't copy the node's text, which goes out of date as the spec changes. `check` can warn about an issue that copies 50 or more words in a row from its node.
+   - Say the outcome in a sentence, link to the node's requirement on the docs repo's default branch, and list its scenarios by name as acceptance criteria. Don't copy the node's text, which goes out of date as the spec changes. When the `github` block sets `check_copied_spec: true`, `check` warns about an issue that copies 50 or more words in a row from its node.
    - End every issue with a `spec-ref:` line holding the commit from step 1, so `manifestdocs stale` can report when the node changes after planning.
    - Link each issue to the node once. A top-level issue goes in the node's `work`, and its sub-issues link through it, so neither needs a `feature:` line. An issue outside that hierarchy, such as a sub-issue of a parent no node lists, gets a `feature: <node id>` line instead.
    - Never put secrets, credentials or personal data in an issue.
@@ -47,7 +47,7 @@ Every `gh` command that writes needs the user's approval, so run each one as a v
 
 1. Create each approved issue with `gh issue create --repo <repo> --title "<title>" --body-file -`, parents first. It prints the new issue's URL.
 2. Attach each sub-issue to its parent. Get the sub-issue's ID, which isn't its number, with `gh api repos/<owner>/<name>/issues/<number> --jq .id`, then run `gh api repos/<owner>/<name>/issues/<parent number>/sub_issues -F sub_issue_id=<id>`, where the repo is the parent's.
-3. Add each new top-level issue to the node's `work` as `owner/name#number`, following the `manifestdocs-author` skill, and run `manifestdocs check`. Commit or open a docs pull request only when the user asks.
+3. Add each new top-level issue to the node's `work` as `owner/name#number`, following the `manifestdocs-author` skill, and run `manifestdocs check`. Keep the issues' `spec-ref`: `stale` ignores commits that only change a node's `work`. Commit or open a docs pull request only when the user asks.
 4. Give the user the URL of each issue.
 
 If a step fails, stop, and tell the user which issues exist and what's left to do.
