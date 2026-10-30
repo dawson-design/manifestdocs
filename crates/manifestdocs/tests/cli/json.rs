@@ -598,3 +598,36 @@ fn json_after_a_double_dash_is_not_a_request_for_json() {
     );
     assert_eq!(run.code, 2);
 }
+
+#[test]
+fn init_prints_the_files_it_created_and_the_root_nodes_id() {
+    let fixture = Fixture::new("json-init", &[]);
+
+    let run = fixture.run("", &["init", "Cookbook", "--json"]);
+
+    let output = parsed(&run);
+    let id = output["data"]["id"].as_str().unwrap_or_default().to_owned();
+    assert_eq!(
+        output,
+        json!({
+            "schema": 1,
+            "command": "init",
+            "data": { "files": ["manifestdocs.yaml", "cookbook.md"], "id": id }
+        })
+    );
+    assert!(fixture.read("cookbook.md").contains(&format!("id: {id}\n")));
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn init_where_a_tree_exists_prints_an_error_object() {
+    let fixture = Fixture::new("json-init-exists", &[("manifestdocs.yaml", "name: demo\n")]);
+
+    let run = fixture.run("", &["init", "Cookbook", "--json"]);
+
+    assert_eq!(
+        parsed(&run),
+        json!({ "schema": 1, "command": "init", "error": "manifestdocs.yaml already exists" })
+    );
+    assert_eq!((run.code, run.stderr.as_str()), (2, ""));
+}

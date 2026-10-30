@@ -11,10 +11,19 @@ use manifestdocs_core::config::{self, TreeConfig, TreeName};
 use manifestdocs_core::id::NodeId;
 use manifestdocs_core::node::{NodeLocation, read_node_file};
 use manifestdocs_core::paths::TreePath;
+use serde::Serialize;
 
+use crate::json;
 use crate::report::write_stdout;
 
-pub fn run(title: Option<&str>) -> Result<ExitCode> {
+/// The files `init` created, in the order its text names them, and the root node's ID.
+#[derive(Serialize)]
+struct Data<'a> {
+    files: [&'a str; 2],
+    id: &'a str,
+}
+
+pub fn run(title: Option<&str>, json: bool) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let title = match title {
         Some(title) => title,
@@ -34,11 +43,20 @@ pub fn run(title: Option<&str>) -> Result<ExitCode> {
     let id = NodeId::from_bytes(random_bytes()?);
     let root_text = root_node(&id, title, &config, &root_file)?;
     write_tree(&cwd, &root_file, &root_text, &config_text)?;
+    created(&root_file, &id, json)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn created(root_file: &str, id: &NodeId, json: bool) -> Result<()> {
+    if json {
+        let files = [config::FILE_NAME, root_file];
+        let id = id.as_str();
+        return json::data("init", Data { files, id });
+    }
     write_stdout(&format!(
         "created {} and {root_file} ({id})\n",
         config::FILE_NAME
-    ))?;
-    Ok(ExitCode::SUCCESS)
+    ))
 }
 
 fn folder_name(folder: &Path) -> Result<&str> {
