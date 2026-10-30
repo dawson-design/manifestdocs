@@ -254,10 +254,33 @@ fn print(command: &str, data: impl Serialize) -> Result<()> {
     })
 }
 
+/// The line `data` prints, for a command that can write it elsewhere, such as `context --out`.
+pub fn text(command: &str, data: impl Serialize) -> Result<String> {
+    line(&Success {
+        schema: SCHEMA,
+        command,
+        data,
+    })
+}
+
+/// Prints an error that stops `command` but sets its own exit code, such as a target node's
+/// frontmatter errors.
+pub fn error(command: &str, error: &str) -> Result<()> {
+    write(&Failure {
+        schema: SCHEMA,
+        command,
+        error,
+    })
+}
+
 fn write(value: &impl Serialize) -> Result<()> {
+    write_stdout(&line(value)?)
+}
+
+fn line(value: &impl Serialize) -> Result<String> {
     let mut text = serde_json::to_string(value).context("can't write the JSON output")?;
     text.push('\n');
-    write_stdout(&text)
+    Ok(text)
 }
 
 fn finding(finding: &Finding, tree_root: &Path, cwd: &Path) -> JsonFinding {
