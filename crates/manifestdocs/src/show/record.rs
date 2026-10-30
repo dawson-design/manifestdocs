@@ -35,7 +35,7 @@ pub fn run(
         .collect();
     let valid = parsed.record.as_ref().filter(|_| errors.is_empty());
     if json {
-        json::data("show", data(records, parsed, &errors, paths))?;
+        json::data("show", data(records, parsed, valid, &errors, paths))?;
     } else {
         let text = match valid {
             Some(record) => render(tree, records, &parsed.file, record, paths),
@@ -158,36 +158,50 @@ struct JsonRecord<'a> {
     file: String,
 }
 
+/// `valid` is the record when its frontmatter has no errors, as text output shows it. In the
+/// chain, each record is superseded by the one before it.
 fn data<'a>(
     records: &'a [ParsedRecord],
     parsed: &'a ParsedRecord,
+    valid: Option<&'a Record>,
     errors: &[Finding],
     paths: &Paths,
 ) -> Data<'a> {
-    let record = parsed.record.as_ref();
-    let chain = record.map(|record| superseded_chain(records, record));
-    let chain = chain.unwrap_or_default().into_iter();
+    let id = parsed.id.as_ref();
+    let newer = id.and_then(|id| superseded_by(records, id));
+    let mut chain = Vec::new();
+    let mut previous = valid.map(|record| &record.id);
+    for (file, older) in valid
+        .map(|record| superseded_chain(records, record))
+        .unwrap_or_default()
+    {
+        chain.push(json_record(
+            Some(&older.id),
+            Some(older),
+            previous,
+            file,
+            paths,
+        ));
+        previous = Some(&older.id);
+    }
     let findings = errors.iter();
     Data {
-        record: json_record(records, parsed.id.as_ref(), record, &parsed.file, paths),
+        record: json_record(id, valid, newer, &parsed.file, paths),
         findings: findings
             .map(|f| json::finding(f, paths.tree_root, paths.cwd))
             .collect(),
-        chain: chain
-            .map(|(file, older)| json_record(records, Some(&older.id), Some(older), file, paths))
-            .collect(),
+        chain,
     }
 }
 
 /// `id` is known even when `record`, the frontmatter, has errors.
 fn json_record<'a>(
-    records: &'a [ParsedRecord],
     id: Option<&'a DecisionId>,
     record: Option<&'a Record>,
+    newer: Option<&'a DecisionId>,
     file: &TreePath,
     paths: &Paths,
 ) -> JsonRecord<'a> {
-    let newer = id.and_then(|id| superseded_by(records, id));
     JsonRecord {
         id: id.map(DecisionId::as_str),
         node: record.map(|r| r.node.as_str()),

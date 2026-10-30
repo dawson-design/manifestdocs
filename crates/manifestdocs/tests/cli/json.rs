@@ -2,6 +2,8 @@
 
 mod context;
 
+use std::fs;
+
 use serde_json::{Value, json};
 
 use crate::show::records;
@@ -431,6 +433,84 @@ fn show_prints_a_broken_records_findings_and_exits_1() {
         })
     );
     assert_eq!(run.code, 1);
+}
+
+/// The record parses, but its `source` doesn't, so it prints only what text output prints:
+/// its errors.
+#[test]
+fn show_prints_a_record_with_a_field_error_as_unknown() {
+    let fixture = records("json-show-record-source");
+    let bad = "---\nid: dc-6d6d6d6\nnode: fd-7c2e41\ntitle: \"Show 30 recipes per page\"\nstatus: accepted\ntopic: page-size-30\ndate: 2026-11-01\nsource: [not a ref, 42]\nsupersedes: dc-1a7f3b4\n---\n";
+    fs::write(
+        fixture.path("search/decisions/2026-11-01-page-size.md"),
+        bad,
+    )
+    .unwrap();
+
+    let run = fixture.run("", &["show", "dc-6d6d", "--json"]);
+
+    let data = parsed(&run)["data"].clone();
+    let unknown = [
+        "node",
+        "title",
+        "status",
+        "topic",
+        "date",
+        "source",
+        "supersedes",
+        "body",
+    ];
+    for field in unknown {
+        assert_eq!(data[field], Value::Null, "{field}");
+    }
+    assert_eq!(data["chain"], json!([]));
+    let codes: Vec<&Value> = data["findings"]
+        .as_array()
+        .expect("findings is a list")
+        .iter()
+        .map(|finding| &finding["code"])
+        .collect();
+    assert!(codes.contains(&&json!("malformed_issue_ref")), "{codes:?}");
+    assert_eq!(run.code, 1);
+}
+
+/// A second record also supersedes the middle one, earlier in path order. In the chain, each
+/// record is still superseded by the one that led to it.
+#[test]
+fn show_links_each_record_in_the_chain_to_the_one_before_it() {
+    let fixture = records("json-show-record-rival");
+    let rival = "---\nid: dc-7a7a7a7\nnode: fd-7c2e41\ntitle: \"Show 40 recipes per page\"\nstatus: proposed\ntopic: page-size-40\ndate: 2026-10-20\nsupersedes: dc-2b8e4c5\n---\n";
+    fs::write(
+        fixture.path("search/decisions/2026-10-20-page-size.md"),
+        rival,
+    )
+    .unwrap();
+
+    let newest = fixture.run("", &["show", "dc-3f1a8", "--json"]);
+    let middle = fixture.run("", &["show", "dc-2b8e", "--json"]);
+
+    let chain = parsed(&newest)["data"]["chain"].clone();
+    assert_eq!(
+        (&chain[0]["superseded_by"], &chain[1]["superseded_by"]),
+        (&json!("dc-3f1a8c2"), &json!("dc-2b8e4c5"))
+    );
+    assert_eq!(
+        parsed(&middle)["data"]["superseded_by"],
+        json!("dc-7a7a7a7")
+    );
+}
+
+#[test]
+fn show_never_reports_a_record_as_superseding_itself() {
+    let fixture = records("json-show-record-self");
+
+    let run = fixture.run("", &["show", "dc-5e1f", "--json"]);
+
+    let data = parsed(&run)["data"].clone();
+    assert_eq!(
+        (&data["supersedes"], &data["superseded_by"], &data["chain"]),
+        (&json!("dc-5e1f5e1"), &Value::Null, &json!([]))
+    );
 }
 
 #[test]

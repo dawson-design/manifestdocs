@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::{cookbook, parsed};
-use crate::docs_source::workspace;
+use crate::docs_source::{git, workspace};
 use crate::support::{Fixture, GhIssue, Run, node};
 
 /// The size the text output's last line states.
@@ -96,10 +96,10 @@ fn context_lists_what_the_budget_left_out() {
 const GITHUB: &str =
     "name: cookbook\ngithub:\n  host: github.com\n  docs_repo: acme/cookbook-docs\n";
 
-#[test]
-fn context_of_an_issue_prints_the_issue_and_its_parent_work_with_no_path() {
+/// Issue #60, under #41, names the Search node in a `feature:` line.
+fn issue_tree(name: &str) -> Fixture {
     let fixture = Fixture::new(
-        "json-context-issue",
+        name,
         &[
             ("manifestdocs.yaml", GITHUB),
             ("cookbook.md", &node("fd-0a0001", "Cookbook")),
@@ -120,6 +120,31 @@ fn context_of_an_issue_prints_the_issue_and_its_parent_work_with_no_path() {
         ..GhIssue::default()
     };
     fixture.gh_issue_with("github.com", "acme/cookbook-docs#60", &issue);
+    fixture
+}
+
+#[test]
+fn context_of_an_issue_marks_a_parent_it_cant_read_and_exits_1() {
+    let fixture = issue_tree("json-context-issue-unreadable");
+    fixture.gh_unreadable_issue("github.com", "acme/cookbook-docs#41");
+
+    let run = fixture.run_with_gh("", &["context", "acme/cookbook-docs#60", "--json"]);
+
+    assert_eq!(
+        parsed(&run)["data"]["pieces"][1],
+        json!({
+            "kind": "parent_work",
+            "heading": "Parent work",
+            "path": null,
+            "text": "- #41: can't read it on GitHub: Resource not accessible by integration"
+        })
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn context_of_an_issue_prints_the_issue_and_its_parent_work_with_no_path() {
+    let fixture = issue_tree("json-context-issue");
 
     let run = fixture.run_with_gh("", &["context", "acme/cookbook-docs#60", "--json"]);
 
@@ -150,6 +175,25 @@ fn context_of_an_issue_prints_the_issue_and_its_parent_work_with_no_path() {
         ])
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
+}
+
+#[test]
+fn context_on_a_detached_head_has_no_ref_in_version() {
+    let (fixture, _, feature) = workspace("json-context-detached");
+    git(&fixture, "work/docs", &["checkout", "-q", "--detach"]);
+
+    let run = fixture.run("work/docs", &["context", "fd-7c2e41", "--json"]);
+
+    assert_eq!(
+        parsed(&run)["data"]["version"],
+        json!({
+            "ref": null,
+            "commit": feature,
+            "date": "2026-10-27",
+            "uncommitted": true,
+            "default_branch": "main"
+        })
+    );
 }
 
 #[test]
