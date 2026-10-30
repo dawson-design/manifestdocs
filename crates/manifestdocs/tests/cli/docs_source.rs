@@ -613,7 +613,11 @@ fn reads_a_read_only_docs_clone() {
 #[test]
 fn reads_a_clone_another_user_owns_once_git_trusts_it() {
     let (fixture, _, _) = workspace("source-other-owner");
-    let other_owner = [("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")];
+    // GitHub's runner images trust every folder in the system git config.
+    let other_owner = [
+        ("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1"),
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+    ];
 
     let refused = run_with(&fixture, "work/docs", &["tree"], &other_owner);
     fs::write(fixture.path(".gitconfig"), "[safe]\n\tdirectory = *\n").unwrap();
