@@ -145,3 +145,57 @@ fn fails_on_an_invalid_config_with_its_line() {
     assert_eq!(run.stdout, "");
     assert_eq!(run.code, 2);
 }
+
+#[test]
+fn accepts_a_status_the_config_lists_beside_superseded() {
+    let root = node("fd-000001", "Demo").replace("status: draft", "status: live");
+    let fixture = Fixture::new(
+        "custom-statuses",
+        &[
+            (
+                "manifestdocs.yaml",
+                "name: demo\nstatuses: [live, Superseded]\n",
+            ),
+            ("demo.md", &root),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(run.stdout, "1 node: no problems\n", "{}", run.stderr);
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn fails_on_config_values_it_cant_use() {
+    let cases = [
+        (
+            "statuses-empty",
+            "name: demo\nstatuses: []\n",
+            "error: manifestdocs.yaml:2: `statuses` must list at least one status besides `superseded`\n",
+        ),
+        (
+            "statuses-only-superseded",
+            "name: demo\nstatuses: [Superseded]\n",
+            "error: manifestdocs.yaml:2: `statuses` must list at least one status besides `superseded`\n",
+        ),
+        (
+            "statuses-two-words",
+            "name: demo\nstatuses: [in review]\n",
+            "error: manifestdocs.yaml:2: status `in review` must be one word\n",
+        ),
+        (
+            "node-tokens-zero",
+            "name: demo\nnode_tokens: 0\n",
+            "error: manifestdocs.yaml:2: `node_tokens` must be at least 1\n",
+        ),
+    ];
+    for (name, config, expected) in cases {
+        let fixture = Fixture::new(name, &[("manifestdocs.yaml", config)]);
+
+        let run = fixture.check("");
+
+        assert_eq!(run.stderr, expected, "{name}");
+        assert_eq!(run.code, 2, "{name}");
+    }
+}

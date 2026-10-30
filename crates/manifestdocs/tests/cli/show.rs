@@ -300,3 +300,62 @@ fn stops_when_the_argument_names_no_single_record() {
         assert_eq!(run.code, 2, "{id}");
     }
 }
+
+/// A tree whose Search node has a supporting doc, a folder in a node file's place whose file
+/// has no frontmatter, and a nested tree, beside a node folder named like an ID.
+fn layout(name: &str) -> Fixture {
+    Fixture::new(
+        name,
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &node("fd-000001", "Demo")),
+            ("search/search.md", &node("fd-000002", "Search")),
+            ("search/guide.md", "# Guide\n"),
+            ("search/notes/notes.md", "# Notes\n"),
+            ("search/vendor/manifestdocs.yaml", "name: lib\n"),
+            ("search/vendor/lib.md", &node("fd-000009", "Lib")),
+            ("fd-x/fd-x.md", &node("fd-000003", "Fd folder")),
+        ],
+    )
+}
+
+#[test]
+fn shows_a_folder_named_like_an_id_given_with_a_dot_slash() {
+    let fixture = layout("show-dot-slash");
+
+    let run = fixture.run("", &["show", "./fd-x"]);
+
+    assert_eq!(
+        run.stdout,
+        "Fd folder (fd-000003, draft)\nFile: fd-x/fd-x.md\nParent: Demo (fd-000001)\nSummary: Fd folder summary.\n\n# Fd folder\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn lists_a_file_without_frontmatter_in_a_node_files_place_but_not_a_nested_trees_files() {
+    let fixture = layout("show-supporting-layout");
+
+    let run = fixture.run("", &["show", "fd-000002"]);
+
+    assert_eq!(
+        run.stdout,
+        "Search (fd-000002, draft)\nFile: search/search.md\nParent: Demo (fd-000001)\n\
+         Summary: Search summary.\n\n# Search\n\nSupporting docs:\n- search/guide.md\n- search/notes/notes.md\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn stops_when_there_is_no_tree() {
+    let fixture = Fixture::new("show-no-tree", &[("notes.md", "# Notes\n")]);
+
+    let run = fixture.run("", &["show", "fd-0000"]);
+
+    assert_eq!(
+        run.stderr,
+        "error: no manifestdocs.yaml in this folder or any folder above it, up to the repo root, \
+         and no .manifestdocs/config.yaml at or above it\n"
+    );
+    assert_eq!(run.code, 2);
+}
