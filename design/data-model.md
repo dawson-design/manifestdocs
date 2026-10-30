@@ -201,7 +201,7 @@ enum DocsSource {
 - `check`, `tree` and `show` are authoring tools, so they read the docs clone's working tree wherever they run. `context`, `decisions`, `work` and `stale` feed agents: walking up to `manifestdocs.yaml` means the current folder is inside the docs clone, so they read the working tree, and reaching the tree through a pointer from another repo means they read the docs clone's `origin/HEAD`. `--ref <ref>` on any read command overrides the default, resolved in the docs clone.
 - An unset `origin/HEAD` is an error that prints `git -C <docs clone> remote set-head origin --auto`. A tree outside git always reads the working tree, and `--ref` there is an error.
 - A commit's snapshot lists paths with `git ls-tree -r -z` and reads Markdown with one `git cat-file --batch`, so the core still gets a `Snapshot` and stays free of I/O.
-- Every git command runs with `GIT_NO_LAZY_FETCH=1`, so a partial clone missing an object fails with a message that names the commit. `stale` is the exception for a diff: it lists that issue as not checked, naming the two commits, and checks the rest. A `.git` that git can't run on, such as when `git` isn't installed or `safe.directory` refuses the clone, is an error, not a tree outside git.
+- Every git command runs with `GIT_NO_LAZY_FETCH=1`, so a partial clone missing an object fails with a message that names the commit. `stale` is the exception: when it can't read a node's history or files, it lists that issue as not checked, naming the commits, and checks the rest. A `.git` that git can't run on, such as when `git` isn't installed or `safe.directory` refuses the clone, is an error, not a tree outside git.
 
 ## GitHub (M3)
 

@@ -689,7 +689,7 @@ fn reports_an_issue_whose_diff_a_partial_clone_cant_read_as_not_checked() {
     let run = fixture.run_with_gh("partial", &["stale"]);
 
     let why = format!(
-        "  can't check it: the docs clone can't diff {} with {}: ",
+        "  can't check it: the docs clone can't compare {} with {}: ",
         short(&fixture, "", &first),
         short(&fixture, "", &later)
     );
@@ -893,6 +893,134 @@ fn ignores_a_change_that_only_adds_issues_to_the_nodes_work() {
              \n\
              1 open issue: 1 stale\n",
             short(&fixture, "", &edited),
+            short(&fixture, "", &first)
+        )
+    );
+}
+
+/// The stale block for Recipe search, linked to the node `heading`, whose only change since
+/// `first` is the new file `file`, a node file of 9 lines.
+fn new_file_block(
+    fixture: &Fixture,
+    heading: &str,
+    file: &str,
+    later: &str,
+    first: &str,
+) -> String {
+    format!(
+        "acme/docs#41 Recipe search\n  \
+         {heading}  {file}\n  \
+         changed in {} (2026-10-10) after its spec-ref {} (2026-10-01)\n    \
+         {file} (+9 -0)\n\
+         \n\
+         1 open issue: 1 stale\n",
+        short(fixture, "", later),
+        short(fixture, "", first)
+    )
+}
+
+/// A node file that isn't at the baseline, because its node moved, is a change, not a
+/// change to `work` alone.
+#[test]
+fn reports_a_node_that_moved_since_the_spec_ref() {
+    let (fixture, first) = docs("stale-moved-node", "", "acme/docs#41");
+    fs::rename(
+        fixture.path("search/filters"),
+        fixture.path("search/facets"),
+    )
+    .unwrap();
+    let facets = fixture.path("search/facets");
+    fs::rename(facets.join("filters.md"), facets.join("facets.md")).unwrap();
+    let later = publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    let heading = "Filters (fd-000003, draft)";
+    let file = "search/facets/facets.md";
+    assert_eq!(
+        run.stdout,
+        new_file_block(&fixture, heading, file, &later, &first)
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn reports_a_node_created_since_the_spec_ref() {
+    let (fixture, first) = docs("stale-new-node", "", "");
+    let sorting = feature("fd-00000c", "Sorting", "acme/docs#41");
+    fs::create_dir_all(fixture.path("search/sorting")).unwrap();
+    fs::write(fixture.path("search/sorting/sorting.md"), sorting).unwrap();
+    let later = publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    let heading = "Sorting (fd-00000c, draft)";
+    let file = "search/sorting/sorting.md";
+    assert_eq!(
+        run.stdout,
+        new_file_block(&fixture, heading, file, &later, &first)
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// A partial clone without trees can't read a commit's folders, so it can't compare that
+/// issue, and the tool never fetches.
+#[test]
+fn reports_an_issue_whose_history_a_treeless_clone_cant_read_as_not_checked() {
+    let (fixture, first) = docs("stale-treeless", "acme/docs#41", "");
+    edit_search(&fixture, "", "acme/docs#41");
+    let later = publish(&fixture, "", LATER);
+    git(
+        &fixture,
+        "",
+        &["config", "uploadpack.allowFilter", "true"],
+        LATER,
+    );
+    let origin = format!("file://{}", fixture.path("").display());
+    let clone = ["clone", "-q", "--filter=tree:0", &origin, "treeless"];
+    git(&fixture, "", &clone, LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("treeless", &["stale"]);
+
+    let why = format!(
+        "  can't check it: the docs clone can't compare {} with {}: ",
+        short(&fixture, "", &first),
+        short(&fixture, "", &later)
+    );
+    assert!(run.stdout.contains(&why), "{}{}", run.stdout, run.stderr);
+    assert!(
+        run.stdout
+            .ends_with("\n1 open issue: none stale, 1 not checked\n")
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// At the baseline, as now, a file in a node file's position is a node only when its
+/// frontmatter has an `id`. Without one it's a supporting doc, and its changes count.
+#[test]
+fn watches_a_supporting_doc_in_a_node_files_position() {
+    let mut files = files("", "acme/docs#41", "");
+    files.push(("search/guide/guide.md".into(), "# Guide\n".into()));
+    let (fixture, first) = docs_with("stale-guide", &files);
+    fs::write(fixture.path("search/guide/guide.md"), "# Guide\n\nMore.\n").unwrap();
+    let later = publish(&fixture, "", LATER);
+    planned_issue(&fixture, &first);
+
+    let run = fixture.run_with_gh("", &["stale"]);
+
+    assert_eq!(
+        run.stdout,
+        format!(
+            "acme/docs#41 Recipe search\n  \
+             Search (fd-000002, draft)  search/search.md\n  \
+             changed in {} (2026-10-10) after its spec-ref {} (2026-10-01)\n    \
+             search/guide/guide.md (+2 -0)\n\
+             \n\
+             1 open issue: 1 stale\n",
+            short(&fixture, "", &later),
             short(&fixture, "", &first)
         )
     );

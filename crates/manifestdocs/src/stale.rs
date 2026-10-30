@@ -14,10 +14,10 @@ use manifestdocs_core::config::TreeConfig;
 use manifestdocs_core::paths::{RepoPath, TreePath};
 use manifestdocs_core::refs::{Host, IssueRef};
 use manifestdocs_core::stale::{
-    Baseline, Linked, Watched, is_commit_id, issues_to_read, linked_issues, only_work_changed,
-    watched,
+    Baseline, Linked, Version, Watched, is_commit_id, issues_to_read, linked_issues,
+    only_work_changed, watched,
 };
-use manifestdocs_core::tree::{Entry, Tree};
+use manifestdocs_core::tree::{Entry, Tree, node_files_to_read, read_tree};
 use manifestdocs_core::work::{Issue, IssueBody, Takeovers, Unreadable, work_links};
 use serde::Serialize;
 
@@ -100,12 +100,14 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    /// The files `node` owns, and didn't own at the baseline whose files are `at_baseline`.
-    fn watched(&self, node: &Entry, at_baseline: Option<&BTreeSet<RepoPath>>) -> PathSet {
-        let snapshot = self.snapshot;
-        let tree_root = &snapshot.tree_root;
-        let Watched { folder, excluded } =
-            watched(self.tree, node, tree_root, &snapshot.paths, at_baseline);
+    /// The files `node` owns, less those a deeper node owned at `baseline`.
+    fn watched(&self, node: &Entry, baseline: Option<&(Tree, Snapshot)>) -> PathSet {
+        let head = Version {
+            tree: self.tree,
+            snapshot: self.snapshot,
+        };
+        let baseline = baseline.map(|(tree, snapshot)| Version { tree, snapshot });
+        let Watched { folder, excluded } = watched(node, head, baseline);
         PathSet {
             folder: folder.to_string(),
             excluded: excluded.iter().map(ToString::to_string).collect(),
@@ -137,8 +139,10 @@ struct History {
     default_branch: Option<Commit>,
     /// The default branch's commit before each issue creation time.
     before: BTreeMap<String, Option<Commit>>,
-    /// The files in each baseline commit.
-    files: BTreeMap<String, BTreeSet<RepoPath>>,
+    /// The tree at each baseline commit.
+    baselines: BTreeMap<String, (Tree, Snapshot)>,
+    /// The files in each commit a node last changed in.
+    listings: BTreeMap<String, BTreeSet<RepoPath>>,
     /// Each node file's history after each baseline commit.
     compared: BTreeMap<(TreePath, Option<String>), Compared>,
 }
@@ -192,17 +196,7 @@ impl History {
     fn open(docs: &Docs, cwd: &Path) -> Result<Self> {
         let clone = docs.roots.repo_root.clone();
         let shown = relative(&clone, cwd);
-        if !clone.join(".git").exists() {
-            let tree = relative(&docs.roots.tree_root, cwd);
-            bail!("`stale` compares the docs' history, and the tree `{tree}` isn't in a git repo");
-        }
-        if git::is_shallow(&clone)? {
-            bail!(
-                "the docs clone `{shown}` is shallow, so `stale` can't read its history; fetch \
-                 all of it, such as with `git -C {shown} fetch --unshallow`, or `fetch-depth: 0` \
-                 for actions/checkout"
-            );
-        }
+        has_full_history(docs, cwd, &shown)?;
         let head_name = match &docs.source {
             DocsSource::Commit { reference, .. } => reference.clone(),
             DocsSource::WorkingTree => "HEAD".to_owned(),
@@ -215,7 +209,8 @@ impl History {
             head,
             default_branch: None,
             before: BTreeMap::new(),
-            files: BTreeMap::new(),
+            baselines: BTreeMap::new(),
+            listings: BTreeMap::new(),
             compared: BTreeMap::new(),
         })
     }
@@ -272,7 +267,7 @@ impl History {
             Ok(since) => since,
             Err(why) => return Ok(Outcome::NotChecked(why)),
         };
-        Ok(match self.compared(context, node, since.as_ref())? {
+        Ok(match self.compared(context, node, since.as_ref()) {
             Compared::Current => Outcome::Current,
             Compared::NoDiff(why) => Outcome::NotChecked(why),
             Compared::Changed { latest, files } => Outcome::Stale(Change {
@@ -320,33 +315,59 @@ impl History {
         Ok(found)
     }
 
-    fn compared(
+    /// A history that can't be read, such as when a partial clone lacks a commit's folders or
+    /// files, leaves only this issue unchecked, since the tool never fetches.
+    fn compared(&mut self, context: &Context, node: &Entry, since: Option<&Commit>) -> Compared {
+        let key = (node.file.clone(), since.map(|since| since.id.clone()));
+        if let Some(found) = self.compared.get(&key) {
+            return found.clone();
+        }
+        let found = self.read_history(context, node, since);
+        let found = found.unwrap_or_else(|error| {
+            let head = &self.head.short;
+            Compared::NoDiff(match since {
+                Some(since) => format!(
+                    "the docs clone can't compare {} with {head}: {error:#}",
+                    since.short
+                ),
+                None => format!("the docs clone can't read its history up to {head}: {error:#}"),
+            })
+        });
+        self.compared.insert(key, found.clone());
+        found
+    }
+
+    fn read_history(
         &mut self,
         context: &Context,
         node: &Entry,
         since: Option<&Commit>,
     ) -> Result<Compared> {
-        let key = (node.file.clone(), since.map(|since| since.id.clone()));
-        if let Some(found) = self.compared.get(&key) {
-            return Ok(found.clone());
-        }
-        let at_baseline = since.map(|since| self.files_at(&since.id)).transpose()?;
-        let paths = context.watched(node, at_baseline);
-        let mut found = self.diff(since, &paths)?;
+        let baseline = match since {
+            Some(since) => Some(self.baseline(context, &since.id)?),
+            None => None,
+        };
         let node_file = context.snapshot.tree_root.join(node.file.as_str());
-        if let (Some(since), Some(node_file), Compared::Changed { latest, files }) =
-            (since, node_file, &found)
+        let at_baseline = baseline.is_some_and(|(_, snapshot)| {
+            node_file
+                .as_ref()
+                .is_some_and(|file| snapshot.paths.contains(file))
+        });
+        let paths = context.watched(node, baseline);
+        let found = self.diff(since, &paths)?;
+        if let (Some(since), Some(node_file), true, Compared::Changed { latest, files }) =
+            (since, node_file, at_baseline, &found)
             && self.work_only(&node_file, since, latest, files)?
         {
-            found = Compared::Current;
+            return Ok(Compared::Current);
         }
-        self.compared.insert(key, found.clone());
         Ok(found)
     }
 
-    /// Whether the node file is the only file that changed, and only in its `work` list.
+    /// Whether the node file, which is at the baseline, is the only file that changed, and
+    /// only in its `work` list. A node file that's gone at `latest` is a change.
     fn work_only(
-        &self,
+        &mut self,
         node_file: &RepoPath,
         since: &Commit,
         latest: &Commit,
@@ -355,7 +376,7 @@ impl History {
         let [file] = files else {
             return Ok(false);
         };
-        if file.path != node_file.as_str() {
+        if file.path != node_file.as_str() || !self.listing(&latest.id)?.contains(node_file) {
             return Ok(false);
         }
         let before = git::text_at(&self.clone, &since.id, &file.path)?;
@@ -363,35 +384,77 @@ impl History {
         Ok(only_work_changed(&before, &after))
     }
 
-    fn files_at(&mut self, id: &str) -> Result<&BTreeSet<RepoPath>> {
-        if !self.files.contains_key(id) {
-            let files = git::files_at(&self.clone, id)?.into_iter();
-            let files = files.filter_map(|(path, _)| RepoPath::new(&path)).collect();
-            self.files.insert(id.to_owned(), files);
+    /// The tree at commit `id`, its nodes read from their files there with the config read
+    /// now, so the nodes there are known by their `id` as they are now.
+    fn baseline(&mut self, context: &Context, id: &str) -> Result<&(Tree, Snapshot)> {
+        if !self.baselines.contains_key(id) {
+            let config = &context.tree.config;
+            let tree_root = &context.snapshot.tree_root;
+            let version = read_version(&self.clone, config, tree_root, id)?;
+            self.baselines.insert(id.to_owned(), version);
         }
-        Ok(&self.files[id])
+        Ok(&self.baselines[id])
     }
 
-    /// A diff that can't be read, such as when a partial clone lacks a file's contents,
-    /// leaves only this issue unchecked, since the tool never fetches.
+    fn listing(&mut self, id: &str) -> Result<&BTreeSet<RepoPath>> {
+        if !self.listings.contains_key(id) {
+            let files = git::files_at(&self.clone, id)?.into_iter();
+            let files = files.filter_map(|(path, _)| RepoPath::new(&path)).collect();
+            self.listings.insert(id.to_owned(), files);
+        }
+        Ok(&self.listings[id])
+    }
+
     fn diff(&self, since: Option<&Commit>, paths: &PathSet) -> Result<Compared> {
         let base = since.map(|since| since.id.as_str());
         let Some(latest) = git::latest_change(&self.clone, base, &self.head.id, paths)? else {
             return Ok(Compared::Current);
         };
-        Ok(
-            match git::diff_summary(&self.clone, base, &latest.id, paths) {
-                Ok(files) => Compared::Changed { latest, files },
-                Err(error) => {
-                    let from = since.map_or("the empty tree", |since| since.short.as_str());
-                    let to = &latest.short;
-                    Compared::NoDiff(format!(
-                        "the docs clone can't diff {from} with {to}: {error:#}"
-                    ))
-                }
-            },
-        )
+        let files = git::diff_summary(&self.clone, base, &latest.id, paths)?;
+        Ok(Compared::Changed { latest, files })
     }
+}
+
+/// Fails when the tree isn't in git, or its clone, which `shown` names, is shallow.
+fn has_full_history(docs: &Docs, cwd: &Path, shown: &str) -> Result<()> {
+    let clone = &docs.roots.repo_root;
+    if !clone.join(".git").exists() {
+        let tree = relative(&docs.roots.tree_root, cwd);
+        bail!("`stale` compares the docs' history, and the tree `{tree}` isn't in a git repo");
+    }
+    if git::is_shallow(clone)? {
+        bail!(
+            "the docs clone `{shown}` is shallow, so `stale` can't read its history; fetch \
+             all of it, such as with `git -C {shown} fetch --unshallow`, or `fetch-depth: 0` \
+             for actions/checkout"
+        );
+    }
+    Ok(())
+}
+
+/// The files in commit `id`, with the tree's node files read, and the tree they make.
+fn read_version(
+    clone: &Path,
+    config: &TreeConfig,
+    tree_root: &RepoPath,
+    id: &str,
+) -> Result<(Tree, Snapshot)> {
+    let files = git::files_at(clone, id)?.into_iter();
+    let blobs: BTreeMap<RepoPath, String> = files
+        .filter_map(|(path, blob)| Some((RepoPath::new(&path)?, blob)))
+        .collect();
+    let mut snapshot = Snapshot {
+        tree_root: tree_root.clone(),
+        paths: blobs.keys().cloned().collect(),
+        markdown: BTreeMap::new(),
+    };
+    let mut reader = git::Blobs::open(clone)?;
+    for path in node_files_to_read(config, tree_root, &snapshot.paths) {
+        let blob = blobs.get(&path).context("a listed file has no blob")?;
+        let text = String::from_utf8_lossy(&reader.read(blob)?).into_owned();
+        snapshot.markdown.insert(path, text);
+    }
+    Ok((read_tree(config, &snapshot), snapshot))
 }
 
 fn resolve(clone: &Path, shown: &str, reference: &str) -> Result<Commit> {

@@ -3,10 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::config::{self, TreeConfig};
+use crate::check::Snapshot;
+use crate::config;
 use crate::frontmatter::{Split, Value, split, values};
 use crate::id::NodeId;
-use crate::layout::{layout, records_folder};
+use crate::layout::records_folder;
 use crate::paths::{RepoPath, TreePath};
 use crate::refs::IssueRef;
 use crate::tree::{Entry, Tree};
@@ -170,28 +171,23 @@ pub struct Watched {
     pub excluded: Vec<RepoPath>,
 }
 
-/// The files `entry` owns. `paths` are the repo's files, which locate its records folders.
-/// `at_baseline` are the files in the version an issue was planned against: the deeper
-/// nodes, nested trees and records folders there are left out too, so one that moved since
-/// isn't read as the node's own files deleted.
-pub fn watched(
-    tree: &Tree,
-    entry: &Entry,
-    tree_root: &RepoPath,
-    paths: &BTreeSet<RepoPath>,
-    at_baseline: Option<&BTreeSet<RepoPath>>,
-) -> Watched {
+/// A version of the tree: the nodes read from it, and its files.
+#[derive(Clone, Copy)]
+pub struct Version<'a> {
+    pub tree: &'a Tree,
+    pub snapshot: &'a Snapshot,
+}
+
+/// The files `entry` owns in `head`. The deeper nodes, nested trees and records folders at
+/// `baseline`, the version an issue was planned against, are left out too, so one that
+/// moved since isn't read as the node's own files deleted.
+pub fn watched(entry: &Entry, head: Version, baseline: Option<Version>) -> Watched {
     let folder = entry.location.folder();
-    let nodes = tree.entries.values().map(|other| other.location.folder());
-    let mut excluded: BTreeSet<TreePath> = nodes
-        .chain(tree.nested_trees.iter().cloned())
-        .chain(records_folders(tree_root, paths))
-        .chain(TreePath::new(config::FILE_NAME))
-        .collect();
-    if let Some(paths) = at_baseline {
-        excluded.extend(earlier_folders(&tree.config, tree_root, paths));
-    }
+    let mut excluded = not_owned(head);
+    excluded.extend(baseline.map(not_owned).into_iter().flatten());
+    excluded.extend(TreePath::new(config::FILE_NAME));
     excluded.retain(|path| path.is_within(&folder));
+    let tree_root = &head.snapshot.tree_root;
     let repo_path = |path: &TreePath| tree_root.join(path.as_str());
     Watched {
         folder: repo_path(&folder).unwrap_or_else(|| tree_root.clone()),
@@ -199,25 +195,16 @@ pub fn watched(
     }
 }
 
-fn records_folders<'a>(
-    tree_root: &'a RepoPath,
-    paths: &'a BTreeSet<RepoPath>,
-) -> impl Iterator<Item = TreePath> + 'a {
-    let in_tree = paths.iter().filter_map(|path| path.in_tree(tree_root));
-    in_tree.filter_map(|file| records_folder(&file))
-}
-
-/// The node folders, nested trees and records folders in an earlier version's `paths`. Its
-/// frontmatter isn't read, so a file in a node file's position counts as a node.
-fn earlier_folders(
-    config: &TreeConfig,
-    tree_root: &RepoPath,
-    paths: &BTreeSet<RepoPath>,
-) -> Vec<TreePath> {
-    let layout = layout(config, tree_root, paths);
-    let nodes = layout.node_files.iter().map(|file| file.location.folder());
-    let nested = layout.nested_trees.iter().cloned();
-    let records = records_folders(tree_root, paths);
+/// The folders in `version` that the node above them doesn't own: nodes' folders, nested
+/// trees and decision records folders. A node is a node file whose `id` parses, as `tree`
+/// reads it.
+fn not_owned(version: Version) -> BTreeSet<TreePath> {
+    let Version { tree, snapshot } = version;
+    let nodes = tree.entries.values().map(|entry| entry.location.folder());
+    let in_tree = snapshot.paths.iter();
+    let in_tree = in_tree.filter_map(|path| path.in_tree(&snapshot.tree_root));
+    let records = in_tree.filter_map(|file| records_folder(&file));
+    let nested = tree.nested_trees.iter().cloned();
     nodes.chain(nested).chain(records).collect()
 }
 
