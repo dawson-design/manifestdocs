@@ -3,6 +3,7 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
+use crate::docs_source::{set_read_only, workspace};
 use crate::support::{Fixture, Run, node};
 
 const DATE: (&str, &str) = ("MANIFESTDOCS_TEST_DATE", "2026-10-29");
@@ -688,4 +689,105 @@ fn warns_when_a_detached_head_has_commits_that_arent_on_the_default_branch() {
     );
     assert_eq!(run.stdout, format!("{WRITTEN}\n"));
     assert_eq!(run.code, 0);
+}
+
+const BESIDE_OLDER_FILE: &str = "work/docs/search/decisions/2026-10-01-page-size.md";
+
+/// A code repo beside a docs clone whose Search node has the older record, and a draft
+/// that supersedes it, for runs from the code repo.
+fn beside_the_docs(name: &str) -> (Fixture, String, String) {
+    let (fixture, _, _) = workspace(name);
+    let older = older("2026-10-01", "accepted").replace("fd-000002", "fd-7c2e41");
+    fs::create_dir_all(fixture.path("work/docs/search/decisions")).unwrap();
+    fs::write(fixture.path(BESIDE_OLDER_FILE), &older).unwrap();
+    let draft = DRAFT
+        .replace("fd-000002", "fd-7c2e41")
+        .replace("topic:", "supersedes: dc-0000001\ntopic:");
+    (fixture, older, draft)
+}
+
+/// A factory run: the code repo reaches the docs through a pointer, the docs clone is a
+/// read-only mount, and the draft supersedes a record in it.
+#[test]
+fn unattended_leaves_the_record_it_supersedes_in_a_read_only_docs_clone_as_it_is() {
+    let (fixture, older, draft) = beside_the_docs("decide-sandbox-supersedes");
+    set_read_only(&fixture.path("work/docs"), true);
+
+    let args = ["decide", "--unattended", "--file", "-"];
+    let run = fixture.run_with("work/web", &args, &draft, &[DATE]);
+
+    set_read_only(&fixture.path("work/docs"), false);
+    assert_eq!(
+        run.stderr,
+        "warning: `dc-0000001` in ../docs/search/decisions/2026-10-01-page-size.md isn't marked \
+         superseded, because this run leaves the tree's records as they are: mark it when the \
+         record moves into the docs\n"
+    );
+    let path = ".manifestdocs/decisions/2026-10-29-page-size.md";
+    assert_eq!(run.stdout, format!("{path}\n"));
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.read(BESIDE_OLDER_FILE), older);
+    let text = fixture.read(&format!("work/web/{path}"));
+    let expected = superseding_record(&id_in(&text))
+        .replace("fd-000002", "fd-7c2e41")
+        .replace("status: accepted", "status: proposed");
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn json_names_no_superseded_record_when_out_is_outside_the_tree() {
+    let (fixture, older, draft) = beside_the_docs("decide-json-out-supersedes");
+
+    let args = ["decide", "--out", "drafts", "--json", "--file", "-"];
+    let run = fixture.run_with("work/web", &args, &draft, &[DATE]);
+
+    let data = &parsed(&run)["data"];
+    assert_eq!(data["outcome"], "written");
+    assert_eq!(data["file"], "drafts/2026-10-29-page-size.md");
+    assert_eq!(data["superseded"], Value::Null);
+    assert_eq!(data["warnings"][0]["code"], "superseded_not_marked");
+    assert_eq!(fixture.read(BESIDE_OLDER_FILE), older);
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn unattended_marks_a_draft_it_supersedes_in_the_drafts_folder() {
+    let fixture = cookbook(
+        "decide-supersedes-draft",
+        "name: demo\n",
+        &[("draft.md", DRAFT)],
+    );
+    decide(&fixture, &["--file", "draft.md", "--unattended"]);
+    let first = ".manifestdocs/decisions/2026-10-29-page-size.md";
+    let first_id = id_in(&fixture.read(first));
+    let second = DRAFT
+        .replace("topic:", &format!("supersedes: {first_id}\ntopic:"))
+        .replace("20 recipes", "25 recipes");
+
+    let args = ["decide", "--unattended", "--file", "-"];
+    let run = fixture.run_with("", &args, &second, &[DATE]);
+
+    assert_eq!(
+        run.stdout,
+        format!(".manifestdocs/decisions/2026-10-29-page-size-2.md\nsuperseded: {first}\n")
+    );
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+    assert!(fixture.read(first).contains("\nstatus: superseded\n"));
+}
+
+#[test]
+fn out_into_the_tree_marks_the_record_it_supersedes() {
+    let fixture = superseding("decide-out-in-tree", OLDER_FILE, "2026-10-01");
+
+    let run = decide(
+        &fixture,
+        &["--file", "draft.md", "--out", "search/decisions"],
+    );
+
+    assert_eq!(run.stdout, format!("{WRITTEN}\nsuperseded: {OLDER_FILE}\n"));
+    assert_eq!(run.stderr, "");
+    assert_eq!(run.code, 0);
+    assert_eq!(fixture.read(OLDER_FILE), older("2026-10-01", "superseded"));
+    assert_eq!(fixture.check("").stdout, "2 nodes: no problems\n");
 }

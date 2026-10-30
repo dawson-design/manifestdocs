@@ -78,7 +78,7 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 | What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `merge: review` the team reviews the PR; with `merge: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
 | Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted` | The same, after the run |
 
-When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/pointer/pointer.md) beside it can be. `--out <dir>` overrides the folder.
+When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/pointer/pointer.md) beside it can be. `--out <dir>` overrides the folder. An unattended run, or an `--out` folder outside the tree, leaves the tree's records as they are, so `decide` never writes to a read-only docs mount: when the record supersedes one in the tree, `decide` warns that the older record isn't marked, and whoever moves the new record into the docs marks it. A draft it supersedes in the same folder is marked.
 
 When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR, apart from the code.
 

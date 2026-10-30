@@ -20,7 +20,7 @@ use manifestdocs_core::record::{
 
 use crate::files::{self, ByDefault};
 use crate::git;
-use crate::locate::{Roots, locate};
+use crate::locate::{Roots, locate, tree_path};
 use crate::report::relative;
 
 /// Only for tests: a `YYYY-MM-DD` date that `decide` writes instead of today's.
@@ -38,10 +38,28 @@ pub struct Args<'a> {
     pub json: bool,
 }
 
-/// Where the record goes: its node's `decisions/` folder, or a folder outside the tree.
+/// Where the record goes: its node's `decisions/` folder, or another folder.
 enum Target {
     Node,
-    Folder { path: PathBuf, local: bool },
+    /// `leaves_tree` when the run mustn't write to the tree: an unattended run, whose docs
+    /// mount is read-only, or an `--out` folder outside the tree.
+    Folder {
+        path: PathBuf,
+        local: bool,
+        leaves_tree: bool,
+    },
+}
+
+impl Target {
+    fn leaves_tree(&self) -> bool {
+        matches!(
+            self,
+            Target::Folder {
+                leaves_tree: true,
+                ..
+            }
+        )
+    }
 }
 
 /// The records `decide` compares against: the tree's, then any in the target folder.
@@ -49,6 +67,17 @@ struct Known {
     records: Vec<ParsedRecord>,
     /// The file of each record, in the same order.
     paths: Vec<PathBuf>,
+    /// How many of `records`, from the start, are the tree's.
+    in_tree: usize,
+}
+
+/// The record a new one supersedes, as this run leaves it.
+enum Older {
+    /// Its new text, with `status: superseded`, to write to the path.
+    Mark(PathBuf, output::Superseded),
+    /// A tree record, left as it is because the run mustn't write to the tree. Whoever moves
+    /// the new record into the docs marks it.
+    Leave(output::Unmarked),
 }
 
 pub fn run(args: &Args) -> Result<ExitCode> {
@@ -59,7 +88,7 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     let roots = &docs.roots;
     let (tree, mut snapshot) = files::tree_and_snapshot(&docs, &cwd)?;
     files::read_records(&mut snapshot, &docs, &tree.config, &cwd)?;
-    let target = target(args, &cwd);
+    let target = target(args, &cwd, roots);
     let known = known(read_records(&tree.config, &snapshot), roots, &target)?;
     let setting = Setting {
         merge: tree.config.merge,
@@ -110,18 +139,17 @@ fn new(draft: &Draft, args: &Args, place: &Place) -> Result<ExitCode> {
     let warnings = warnings(place.target, place.roots);
     if !args.dry_run {
         write(&path, &draft.text, place.target, &shown(&path))?;
-        if let Some((older_path, older)) = &older {
+        if let Some(Older::Mark(older_path, older)) = &older {
             fs::write(older_path, &older.record)
                 .with_context(|| format!("can't mark {} superseded", older.file))?;
         }
     }
-    let older = older.map(|(_, older)| older);
     output::new(draft, &shown(&path), older.as_ref(), &warnings, args)
 }
 
-/// The record `draft` supersedes, with its `status` line changed to `superseded`. `None`
-/// when it supersedes nothing, or a record that's already superseded.
-fn superseded(draft: &Draft, place: &Place) -> Result<Option<(PathBuf, output::Superseded)>> {
+/// The record `draft` supersedes, and whether this run marks it. `None` when it supersedes
+/// nothing, or a record that's already superseded.
+fn superseded(draft: &Draft, place: &Place) -> Result<Option<Older>> {
     let Some(id) = &draft.record.supersedes else {
         return Ok(None);
     };
@@ -135,12 +163,17 @@ fn superseded(draft: &Draft, place: &Place) -> Result<Option<(PathBuf, output::S
     }
     let path = known.paths[index].clone();
     let file = relative(&path, place.cwd);
+    if index < known.in_tree && place.target.leaves_tree() {
+        let id = id.to_string();
+        return Ok(Some(Older::Leave(output::Unmarked { id, file })));
+    }
     let text =
         fs::read_to_string(&path).with_context(|| format!("can't read {file} as UTF-8 text"))?;
     let record = mark_superseded(&text)
         .ok_or_else(|| anyhow!("can't mark {file} superseded: it has no `status` line"))?;
     let id = id.to_string();
-    Ok(Some((path, output::Superseded { id, file, record })))
+    let marked = output::Superseded { id, file, record };
+    Ok(Some(Older::Mark(path, marked)))
 }
 
 fn read_input(file: &str, cwd: &Path) -> Result<String> {
@@ -156,14 +189,24 @@ fn read_input(file: &str, cwd: &Path) -> Result<String> {
 
 // `--out` wins. An unattended run is a factory run, which writes into the code repo
 // because the docs mount is read-only.
-fn target(args: &Args, cwd: &Path) -> Target {
+fn target(args: &Args, cwd: &Path, roots: &Roots) -> Target {
     if let Some(out) = args.out {
         let path = cwd.join(out);
-        return Target::Folder { path, local: false };
+        let outside = tree_path(out, cwd, &roots.tree_root).is_err();
+        let leaves_tree = args.unattended || outside;
+        return Target::Folder {
+            path,
+            local: false,
+            leaves_tree,
+        };
     }
     if args.unattended {
         let path = repo_root(cwd).join(LOCAL_FOLDER);
-        return Target::Folder { path, local: true };
+        return Target::Folder {
+            path,
+            local: true,
+            leaves_tree: true,
+        };
     }
     Target::Node
 }
@@ -182,6 +225,7 @@ fn known(tree_records: Vec<ParsedRecord>, roots: &Roots, target: &Target) -> Res
         .map(|r| roots.tree_root.join(r.file.as_str()));
     let mut known = Known {
         paths: paths.collect(),
+        in_tree: tree_records.len(),
         records: tree_records,
     };
     if let Target::Folder { path, .. } = target {

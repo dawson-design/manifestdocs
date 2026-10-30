@@ -1,6 +1,6 @@
 //! What `decide` prints: the paths, the records on a dry run, warnings, or the input's errors.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -8,7 +8,7 @@ use manifestdocs_core::decide::{CloneWarning, Draft, InputError};
 use manifestdocs_core::record::ParsedRecord;
 use serde::Serialize;
 
-use super::Args;
+use super::{Args, Older};
 use crate::json;
 use crate::report::write_stdout;
 
@@ -33,6 +33,29 @@ pub struct Superseded {
     pub id: String,
     pub file: String,
     pub record: String,
+}
+
+/// A tree record the new one supersedes but that this run leaves as it is.
+pub struct Unmarked {
+    pub id: String,
+    pub file: String,
+}
+
+impl Unmarked {
+    fn code(&self) -> &'static str {
+        "superseded_not_marked"
+    }
+}
+
+impl fmt::Display for Unmarked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { id, file } = self;
+        write!(
+            f,
+            "`{id}` in {file} isn't marked superseded, because this run leaves the tree's \
+             records as they are: mark it when the record moves into the docs"
+        )
+    }
 }
 
 /// A finding's fields, plus the frontmatter field and the fix. `file` is `None` for stdin.
@@ -123,34 +146,59 @@ pub fn unchanged(existing: &ParsedRecord, path: &str, json: bool) -> Result<Exit
 pub fn new(
     draft: &Draft,
     path: &str,
-    older: Option<&Superseded>,
+    older: Option<&Older>,
     clone: &[CloneWarning],
     args: &Args,
 ) -> Result<ExitCode> {
-    let long = draft.warnings.iter().map(|w| (w.code(), w.to_string()));
-    let clone = clone.iter().map(|w| (w.code(), w.to_string()));
-    let warnings: Vec<(&str, String)> = long.chain(clone).collect();
+    let (older, unmarked) = match older {
+        Some(Older::Mark(_, older)) => (Some(older), None),
+        Some(Older::Leave(older)) => (None, Some(older)),
+        None => (None, None),
+    };
+    let warnings = warnings(draft, unmarked, clone);
     if args.json {
-        let warnings = warnings
-            .into_iter()
-            .map(|(code, message)| JsonWarning { code, message });
-        let data = Data {
-            id: Some(draft.record.id.as_str()),
-            status: Some(draft.record.status.as_str()),
-            file: Some(path),
-            record: Some(&draft.text),
-            superseded: older,
-            warnings: warnings.collect(),
-            ..Data::empty(if args.dry_run { "dry_run" } else { "written" })
-        };
-        json::data("decide", data)?;
-        return Ok(ExitCode::SUCCESS);
+        return new_json(draft, path, older, warnings, args.dry_run);
     }
     for (_, message) in &warnings {
         eprintln!("warning: {message}");
     }
     write_stdout(&text(draft, path, older, args.dry_run))?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn new_json(
+    draft: &Draft,
+    path: &str,
+    older: Option<&Superseded>,
+    warnings: Vec<(&'static str, String)>,
+    dry_run: bool,
+) -> Result<ExitCode> {
+    let warnings = warnings
+        .into_iter()
+        .map(|(code, message)| JsonWarning { code, message });
+    let data = Data {
+        id: Some(draft.record.id.as_str()),
+        status: Some(draft.record.status.as_str()),
+        file: Some(path),
+        record: Some(&draft.text),
+        superseded: older,
+        warnings: warnings.collect(),
+        ..Data::empty(if dry_run { "dry_run" } else { "written" })
+    };
+    json::data("decide", data)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Each warning's code and message: a long body, an unmarked older record, then the clone's.
+fn warnings(
+    draft: &Draft,
+    unmarked: Option<&Unmarked>,
+    clone: &[CloneWarning],
+) -> Vec<(&'static str, String)> {
+    let long = draft.warnings.iter().map(|w| (w.code(), w.to_string()));
+    let unmarked = unmarked.map(|w| (w.code(), w.to_string()));
+    let clone = clone.iter().map(|w| (w.code(), w.to_string()));
+    long.chain(unmarked).chain(clone).collect()
 }
 
 fn text(draft: &Draft, path: &str, older: Option<&Superseded>, dry_run: bool) -> String {

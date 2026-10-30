@@ -636,7 +636,7 @@ fn reads_a_clone_another_user_owns_once_git_trusts_it() {
 }
 
 /// Makes every file and folder under `path` read-only, or writable again.
-fn set_read_only(path: &std::path::Path, read_only: bool) {
+pub fn set_read_only(path: &std::path::Path, read_only: bool) {
     use std::os::unix::fs::PermissionsExt as _;
 
     let is_dir = path.is_dir();
