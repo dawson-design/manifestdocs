@@ -4,6 +4,7 @@ mod context;
 
 use serde_json::{Value, json};
 
+use crate::show::records;
 use crate::support::{Fixture, Run, node};
 
 fn parsed(run: &Run) -> Value {
@@ -324,22 +325,112 @@ fn an_argument_that_names_no_node_prints_an_error_object() {
     assert_eq!(run.code, 2);
 }
 
-/// A record's JSON shape isn't settled, so `--json` refuses instead of printing text.
 #[test]
-fn show_of_a_decision_record_prints_an_error_object() {
-    let fixture = cookbook("json-show-record");
+fn show_prints_a_decision_record_with_the_chain_it_supersedes() {
+    let fixture = records("json-show-record");
 
-    let run = fixture.run("", &["show", "dc-0000001", "--json"]);
+    let run = fixture.run("", &["show", "dc-3f1a8", "--json"]);
 
     assert_eq!(
         parsed(&run),
         json!({
             "schema": 1,
             "command": "show",
-            "error": "`show --json` doesn't support decision records yet"
+            "data": {
+                "id": "dc-3f1a8c2",
+                "node": "fd-7c2e41",
+                "title": "Show 20 recipes per page",
+                "status": "accepted",
+                "topic": "page-size",
+                "date": "2026-10-28",
+                "decided_by": "octocat",
+                "source": ["example-org/cookbook-web#212"],
+                "applies_to": ["example-org/cookbook-web:src/search/page.ts"],
+                "supersedes": "dc-2b8e4c5",
+                "superseded_by": null,
+                "body": "**Decision.** Show 20 recipes per page.\n\n**Why.** Readers rarely scroll past 20.",
+                "file": "search/decisions/2026-10-28-page-size.md",
+                "findings": [],
+                "chain": [
+                    {
+                        "id": "dc-2b8e4c5",
+                        "node": "fd-7c2e41",
+                        "title": "Show 50 recipes per page",
+                        "status": "superseded",
+                        "topic": "page-size",
+                        "date": "2026-10-14",
+                        "decided_by": null,
+                        "source": [],
+                        "applies_to": [],
+                        "supersedes": "dc-1a7f3b4",
+                        "superseded_by": "dc-3f1a8c2",
+                        "body": "**Decision.** Show 50 recipes per page.",
+                        "file": "search/decisions/2026-10-14-page-size.md"
+                    },
+                    {
+                        "id": "dc-1a7f3b4",
+                        "node": "fd-7c2e41",
+                        "title": "Show 10 recipes per page",
+                        "status": "superseded",
+                        "topic": "page-size",
+                        "date": "2026-10-01",
+                        "decided_by": null,
+                        "source": [],
+                        "applies_to": [],
+                        "supersedes": null,
+                        "superseded_by": "dc-2b8e4c5",
+                        "body": "**Decision.** Show 10 recipes per page.",
+                        "file": "search/decisions/2026-10-01-page-size.md"
+                    }
+                ]
+            }
         })
     );
-    assert_eq!(run.code, 2);
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn show_prints_a_broken_records_findings_and_exits_1() {
+    let fixture = records("json-show-record-broken");
+
+    let run = fixture.run("", &["show", "dc-4c4c", "--json"]);
+
+    assert_eq!(
+        parsed(&run)["data"],
+        json!({
+            "id": "dc-4c4c4c4",
+            "node": null,
+            "title": null,
+            "status": null,
+            "topic": null,
+            "date": null,
+            "decided_by": null,
+            "source": null,
+            "applies_to": null,
+            "supersedes": null,
+            "superseded_by": null,
+            "body": null,
+            "file": "search/decisions/2026-10-30-broken.md",
+            "findings": [
+                {
+                    "file": "search/decisions/2026-10-30-broken.md",
+                    "line": 4,
+                    "severity": "error",
+                    "code": "unquoted_field",
+                    "message": "`title` must be double-quoted"
+                },
+                {
+                    "file": "search/decisions/2026-10-30-broken.md",
+                    "line": 5,
+                    "severity": "error",
+                    "code": "unknown_record_status",
+                    "message": "status `final` isn't a record status: expected `proposed`, `accepted`, `superseded` or `rejected`"
+                }
+            ],
+            "chain": []
+        })
+    );
+    assert_eq!(run.code, 1);
 }
 
 #[test]
