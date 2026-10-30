@@ -8,12 +8,12 @@ allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs decide:*), Bash(m
 
 Choices made in an issue thread are lost to the next session unless they reach the docs. The people in the thread are the deciders. You find their decisions and draft records; you never decide, and the user confirms each record.
 
-Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop. Capturing also needs `gh`, signed in.
+Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop. Capturing also needs `gh`, signed in, and a `github` block in `manifestdocs.yaml`.
 
 ## Read the thread
 
 1. Run `gh issue view <number> --repo <owner/name> --comments`.
-2. Run `manifestdocs context <owner/name#number> --format md --budget 8000`. It finds the issue's node through a node's `work` or the issue's `feature:` line, and shows the node's spec and decisions. If it exits 2 because the issue links to no node, run `manifestdocs tree --depth 2`, pick the node the thread is about, and say which one you picked.
+2. Run `manifestdocs context <owner/name#number> --format md --budget 8000`. It finds the issue's node through a node's `work` or the issue's `feature:` line, and shows the node's spec and decisions. If it exits 2 for any reason, such as an issue that links to no node or that `gh` can't read, run `manifestdocs tree --depth 2`, pick the node the thread is about, say which one you picked, and run `manifestdocs context <node id> --format md --budget 8000`.
 3. Find each choice in the thread that passes the test in the `manifestdocs-decide` skill. Skip a proposal nobody agreed to, or ask the user about it. Skip a choice the node or its decisions already state.
 
 If nothing passes the test, say there's nothing to capture, and stop.
