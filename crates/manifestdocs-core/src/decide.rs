@@ -433,20 +433,24 @@ pub struct CloneState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CloneWarning {
-    AheadOfDefaultBranch { branch: String, default: String },
+    /// `branch` is `None` when HEAD is detached.
+    AheadOfDefaultBranch {
+        branch: Option<String>,
+        default: String,
+    },
     UncommittedChanges,
 }
 
 /// What's worth a warning before writing into the clone. A fresh branch from the default
-/// branch, such as the decide skill's worktree, isn't. A detached HEAD, or a clone with no
-/// known default branch, has no branch to compare.
+/// branch, such as the decide skill's worktree, isn't. A clone with no known default branch
+/// has nothing to compare.
 pub fn clone_warnings(state: &CloneState) -> Vec<CloneWarning> {
     let mut warnings = Vec::new();
-    if let (Some(branch), Some(default)) = (&state.branch, &state.default_branch)
+    if let Some(default) = &state.default_branch
         && state.ahead_of_default
     {
         warnings.push(CloneWarning::AheadOfDefaultBranch {
-            branch: branch.clone(),
+            branch: state.branch.clone(),
             default: default.clone(),
         });
     }
@@ -468,9 +472,19 @@ impl CloneWarning {
 impl fmt::Display for CloneWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AheadOfDefaultBranch { branch, default } => write!(
+            Self::AheadOfDefaultBranch {
+                branch: Some(branch),
+                default,
+            } => write!(
                 f,
                 "the docs clone is on `{branch}`, which has commits that aren't on its default branch `{default}`"
+            ),
+            Self::AheadOfDefaultBranch {
+                branch: None,
+                default,
+            } => write!(
+                f,
+                "the docs clone's detached HEAD has commits that aren't on its default branch `{default}`"
             ),
             Self::UncommittedChanges => f.write_str("the docs clone has uncommitted changes"),
         }
