@@ -103,6 +103,9 @@ enum Command {
     Init {
         /// The project's title; the tree's name is the title in kebab case [default: this folder's name]
         title: Option<String>,
+        /// Print JSON, in schema version 1, instead of text
+        #[arg(long)]
+        json: bool,
     },
     /// Write a decision record from a file or stdin, filling in its ID, date and status, and
     /// print its path
@@ -146,6 +149,7 @@ impl Command {
             Self::Decisions { json: true, .. } => Some("decisions"),
             Self::Work { json: true, .. } => Some("work"),
             Self::Context { json: true, .. } => Some("context"),
+            Self::Init { json: true, .. } => Some("init"),
             _ => None,
         }
     }
@@ -213,7 +217,7 @@ fn main() -> ExitCode {
             json,
         }),
         Command::Work { node, json, docs } => work::run(&node, json, docs.reference.as_deref()),
-        Command::Init { title } => init::run(title.as_deref()),
+        Command::Init { title, json } => init::run(title.as_deref(), json),
         Command::Decide {
             file,
             dry_run,
