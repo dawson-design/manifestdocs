@@ -316,6 +316,14 @@ pub fn is_ancestor(clone: &Path, ancestor: &str, head: &str) -> Result<bool> {
     }
 }
 
+/// The text of the file at `path`, from the repo root, in commit `id`. Bytes that aren't
+/// UTF-8 are replaced, since the text is only compared.
+pub fn text_at(clone: &Path, id: &str, path: &str) -> Result<String> {
+    let object = format!("{id}:{path}");
+    let contents = run_bytes(clone, &["cat-file", "blob", &object])?;
+    Ok(String::from_utf8_lossy(&contents).into_owned())
+}
+
 /// Whether the clone is shallow, so commits before its cut-off aren't in it.
 pub fn is_shallow(clone: &Path) -> Result<bool> {
     Ok(run(clone, &["rev-parse", "--is-shallow-repository"])? == "true")
