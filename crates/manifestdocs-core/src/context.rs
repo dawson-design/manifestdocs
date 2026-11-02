@@ -26,8 +26,9 @@ pub enum DocsVersion {
         commit: String,
         /// The commit's date, as `YYYY-MM-DD`.
         date: String,
-        /// Whether the tree or a loaded doc has uncommitted or untracked changes.
-        uncommitted: bool,
+        /// Whether the tree or a loaded doc has uncommitted or untracked changes, or whether
+        /// git couldn't tell.
+        changes: Changes,
         /// The branch `origin/HEAD` names, when it's set.
         default_branch: Option<String>,
     },
@@ -40,6 +41,15 @@ pub enum DocsVersion {
         /// The commit's date, as `YYYY-MM-DD`.
         date: String,
     },
+}
+
+/// What `git status` says about the working tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Changes {
+    Clean,
+    Uncommitted,
+    /// `git status` failed, such as on a corrupt index.
+    Unknown,
 }
 
 /// An approximate token budget for the whole context, at least 1.
@@ -607,15 +617,16 @@ fn header(name: &str, version: &DocsVersion) -> String {
         branch,
         commit,
         date,
-        uncommitted,
+        changes,
         default_branch,
     } = version
     else {
         return format!("# Context: {name} (docs not in git)\n");
     };
-    let changes = match uncommitted {
-        true => ", uncommitted changes",
-        false => "",
+    let changes = match changes {
+        Changes::Clean => "",
+        Changes::Uncommitted => ", uncommitted changes",
+        Changes::Unknown => ", uncommitted changes unknown",
     };
     let on = branch.as_deref().unwrap_or("detached HEAD");
     let mut out = format!("# Context: {name} (docs {on} @ {commit}, {date}{changes})\n");

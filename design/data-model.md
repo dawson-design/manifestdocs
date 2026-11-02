@@ -70,9 +70,10 @@ struct Snapshot {
 // What `context` reads and assembles (M1)
 enum DocsVersion {
     NotInGit,
-    WorkingTree { branch: Option<String>, commit: String, date: String, uncommitted: bool, default_branch: Option<String> },
-    // branch is None when HEAD is detached; uncommitted covers the tree and the loaded docs
+    WorkingTree { branch: Option<String>, commit: String, date: String, changes: Changes, default_branch: Option<String> },
+    // branch is None when HEAD is detached; changes covers the tree and the loaded docs
 }
+enum Changes { Clean, Uncommitted, Unknown }  // Unknown when `git status` fails
 struct Budget(u32);                    // tokens, at least 1; fills characters / 3, less 10%
 struct Links {                         // one hop from the target's body, in order of first appearance
     docs: Vec<RepoPath>,               // local Markdown that isn't a node, loaded in full

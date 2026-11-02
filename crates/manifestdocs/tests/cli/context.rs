@@ -1138,6 +1138,24 @@ fn skips_a_record_file_it_cant_read() {
 }
 
 #[test]
+fn says_when_git_cant_tell_whether_the_docs_have_changes() {
+    let fixture = cookbook("context-git-status-fails", ENGINE);
+    git(&fixture, &["init", "-q", "-b", "main"]);
+    git(&fixture, &["add", "-A"]);
+    git(&fixture, &["commit", "-q", "-m", "Add the cookbook"]);
+    let commit = git(&fixture, &["rev-parse", "--short", "HEAD"]);
+    // A corrupt index stops `git status`, while the commit can still be read.
+    fs::write(fixture.path(".git/index"), "garbage").unwrap();
+
+    assert_eq!(
+        header(&fixture),
+        format!(
+            "# Context: fd-7c2e41 (docs main @ {commit}, 2026-10-27, uncommitted changes unknown)"
+        )
+    );
+}
+
+#[test]
 fn lists_a_link_to_the_repo_root_that_check_accepts() {
     let feature = format!("{}See [the repo](/).\n", node("fd-0a0002", "Feature"));
     let fixture = Fixture::new(
