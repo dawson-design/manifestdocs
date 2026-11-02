@@ -58,7 +58,7 @@ When a decision changes what a feature does, the agent also edits the node's req
 
 A decision that applies to several nodes goes on their nearest common ancestor, which `context` loads for each of them. One that applies to no node goes on the root node.
 
-**On demand.** `/manifestdocs:record` asks the agent to review the session and propose any decisions it missed, before the transcript is compacted or closed. When nothing passes the test, the agent says there's nothing to record. No hook prompts for this, because Claude Code has no hook that can keep a session going as it ends.
+**On demand.** `/mfd:record` asks the agent to review the session and propose any decisions it missed, before the transcript is compacted or closed. When nothing passes the test, the agent says there's nothing to record. No hook prompts for this, because Claude Code has no hook that can keep a session going as it ends.
 
 ## Status
 
