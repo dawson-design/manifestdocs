@@ -664,10 +664,7 @@ fn body<'a>(request: &'a Request, entry: &'a Entry) -> &'a str {
     }
     let file = request.snapshot.tree_root.join(entry.file.as_str());
     let text = file.and_then(|file| request.snapshot.markdown.get(&file));
-    match text.map(|text| frontmatter::split(text)) {
-        Some(frontmatter::Split::Present(frontmatter)) => frontmatter.body,
-        _ => text.map_or("", String::as_str),
-    }
+    text.map_or("", |text| frontmatter::body(text).0)
 }
 
 /// A body as the context prints it, without its leading blank lines or trailing space.

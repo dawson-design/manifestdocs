@@ -1136,3 +1136,23 @@ fn skips_a_record_file_it_cant_read() {
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
 }
+
+#[test]
+fn leaves_out_the_byte_order_mark_of_an_ancestor_with_errors() {
+    // The block never closes, so the parent has problems and its whole file is its body.
+    let parent = "\u{feff}---\nid: fd-0a0002\ntitle: \"Parent\"\nstatus: draft\n\n# Parent\n\nParent rules.\n";
+    let fixture = Fixture::new(
+        "context-ancestor-bom",
+        &[
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/parent/parent.md", parent),
+            ("docs/parent/child/child.md", &node("fd-0a0003", "Child")),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-0a0003"]);
+
+    assert!(run.stdout.contains("Parent rules."), "{}", run.stdout);
+    assert!(!run.stdout.contains('\u{feff}'), "{}", run.stdout);
+}
