@@ -53,7 +53,7 @@ impl Budget {
 
     /// The characters that fit: 3 a token, less 10% headroom for tokenizers that need more.
     fn characters(self) -> usize {
-        usize::try_from(self.0).unwrap_or(usize::MAX) / 10 * 9 * 3
+        usize::try_from(u64::from(self.0) * 27 / 10).unwrap_or(usize::MAX)
     }
 }
 
@@ -997,6 +997,15 @@ mod tests {
     fn needs_a_budget_of_at_least_one_token() {
         assert_eq!(Budget::new(0), None);
         assert!(Budget::new(1).is_some());
+    }
+
+    #[test]
+    fn fits_nine_tenths_of_three_characters_a_token() {
+        let characters = |tokens| Budget::new(tokens).unwrap().characters();
+
+        assert_eq!(characters(9), 24);
+        assert_eq!(characters(19), 51);
+        assert_eq!(characters(1_000), 2_700);
     }
 
     #[test]
