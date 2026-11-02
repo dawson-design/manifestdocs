@@ -214,6 +214,26 @@ fn context_names_the_branch_commit_and_changes_in_version() {
     );
 }
 
+#[test]
+fn context_says_null_when_git_cant_tell_whether_the_docs_have_changes() {
+    let (fixture, _, feature) = workspace("json-context-status-fails");
+    // A corrupt index stops `git status`, while the commit can still be read.
+    std::fs::write(fixture.path("work/docs/.git/index"), "garbage").unwrap();
+
+    let run = fixture.run("work/docs", &["context", "fd-7c2e41", "--json"]);
+
+    assert_eq!(
+        parsed(&run)["data"]["version"],
+        json!({
+            "ref": "feature/x",
+            "commit": feature,
+            "date": "2026-10-27",
+            "uncommitted": null,
+            "default_branch": "main"
+        })
+    );
+}
+
 /// From another repo, the context is `origin/HEAD`'s, so it has no uncommitted changes.
 #[test]
 fn context_out_writes_the_json_to_the_file() {

@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
-use manifestdocs_core::context::DocsVersion;
+use manifestdocs_core::context::{Changes, DocsVersion};
 
-/// The version of the working tree at `tree_root`. `uncommitted` covers the tree's folder and
-/// `docs`, the files outside it that the context loads. Without git, or without a commit,
-/// it's `NotInGit`, so a tree still gets its context.
+/// The version of the working tree at `tree_root`. `changes` covers the tree's folder and
+/// `docs`, the files outside it that the context loads, and is `Unknown` when `git status`
+/// fails. Without git, or without a commit, it's `NotInGit`, so a tree still gets its context.
 pub fn version(tree_root: &Path, docs: &[PathBuf]) -> DocsVersion {
     let log = ["log", "-1", "--no-show-signature", "--format=%h %cs"];
     let Some(head) = git(tree_root, &log) else {
@@ -34,7 +34,11 @@ pub fn version(tree_root: &Path, docs: &[PathBuf]) -> DocsVersion {
         branch,
         commit: commit.to_owned(),
         date: date.to_owned(),
-        uncommitted: changes.is_some_and(|changes| !changes.is_empty()),
+        changes: match changes.as_deref() {
+            None => Changes::Unknown,
+            Some("") => Changes::Clean,
+            Some(_) => Changes::Uncommitted,
+        },
         default_branch: origin_head(tree_root)
             .and_then(|head| head.strip_prefix("origin/").map(str::to_owned)),
     }

@@ -13,7 +13,7 @@ summary: "Assembles a node's or an issue's context for a coding agent within an 
 
 `context` follows links one hop from the target node's body. Local Markdown files load in order of first appearance, without duplicates, skipping the target and its ancestors. Links inside code spans and fenced blocks don't count. Links to other nodes appear as one-line summaries, and other links, such as images and external URLs, are listed by path. Links inside loaded docs are listed, not followed, so there are no cycles. A linked node that's also an ancestor appears once, in full, and a linked child appears once, in "Around this feature". Broken links are left out, because `check` reports them.
 
-For a node rather than an issue, the header names the node's ID, as in `# Context: fd-7c2e41 (docs main @ 3f9a1c2, 2026-10-27)`. A tree outside git says `(docs not in git)`.
+For a node rather than an issue, the header names the node's ID, as in `# Context: fd-7c2e41 (docs main @ 3f9a1c2, 2026-10-27)`. A tree outside git says `(docs not in git)`. When git can't report the working tree's status, the header says `uncommitted changes unknown` rather than claiming the docs are clean.
 
 ## Example
 

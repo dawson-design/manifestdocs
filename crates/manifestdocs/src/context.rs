@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, anyhow, bail};
 use manifestdocs_core::check::Snapshot;
 use manifestdocs_core::context::{
-    Budget, Context as Assembled, DocsVersion, Omitted, Piece, Request, context, docs_to_read,
-    predecessors_to_read, records_to_read,
+    Budget, Changes, Context as Assembled, DocsVersion, Omitted, Piece, Request, context,
+    docs_to_read, predecessors_to_read, records_to_read,
 };
 use manifestdocs_core::paths::RepoPath;
 use manifestdocs_core::refs::IssueRef;
@@ -185,7 +185,8 @@ struct Version<'a> {
     reference: Option<&'a str>,
     commit: &'a str,
     date: &'a str,
-    uncommitted: bool,
+    /// `None` when `git status` can't tell.
+    uncommitted: Option<bool>,
     default_branch: Option<&'a str>,
 }
 
@@ -222,13 +223,17 @@ fn json_version(version: &DocsVersion) -> Option<Version<'_>> {
             branch,
             commit,
             date,
-            uncommitted,
+            changes,
             default_branch,
         } => Some(Version {
             reference: branch.as_deref(),
             commit,
             date,
-            uncommitted: *uncommitted,
+            uncommitted: match changes {
+                Changes::Clean => Some(false),
+                Changes::Uncommitted => Some(true),
+                Changes::Unknown => None,
+            },
             default_branch: default_branch.as_deref(),
         }),
         DocsVersion::Commit {
@@ -239,7 +244,7 @@ fn json_version(version: &DocsVersion) -> Option<Version<'_>> {
             reference: Some(reference),
             commit,
             date,
-            uncommitted: false,
+            uncommitted: Some(false),
             default_branch: None,
         }),
     }
