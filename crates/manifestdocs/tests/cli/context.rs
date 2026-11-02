@@ -1138,6 +1138,26 @@ fn skips_a_record_file_it_cant_read() {
 }
 
 #[test]
+fn lists_a_link_to_the_repo_root_that_check_accepts() {
+    let feature = format!("{}See [the repo](/).\n", node("fd-0a0002", "Feature"));
+    let fixture = Fixture::new(
+        "context-repo-root",
+        &[
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/feature/feature.md", &feature),
+        ],
+    );
+
+    let check = fixture.check("docs");
+    let run = fixture.run("docs", &["context", "feature"]);
+
+    assert_eq!(check.code, 0, "{}", check.stdout);
+    let (before, _) = estimate(&run);
+    assert!(before.ends_with("\n## Other links\n\n- ..\n\n"), "{before}");
+}
+
+#[test]
 fn leaves_out_the_byte_order_mark_of_an_ancestor_with_errors() {
     // The block never closes, so the parent has problems and its whole file is its body.
     let parent = "\u{feff}---\nid: fd-0a0002\ntitle: \"Parent\"\nstatus: draft\n\n# Parent\n\nParent rules.\n";

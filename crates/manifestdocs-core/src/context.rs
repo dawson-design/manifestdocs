@@ -230,10 +230,13 @@ fn listed(snapshot: &Snapshot, target: LinkTarget) -> Option<Listed> {
     }
 }
 
+// The empty path is the repo root, which always exists, as `check` counts it.
 fn exists(snapshot: &Snapshot, path: &RepoPath) -> bool {
     let folder = format!("{}/", path.as_str());
     let mut paths = snapshot.paths.iter();
-    snapshot.paths.contains(path) || paths.any(|p| p.as_str().starts_with(&folder))
+    path.as_str().is_empty()
+        || snapshot.paths.contains(path)
+        || paths.any(|p| p.as_str().starts_with(&folder))
 }
 
 fn body_links(snapshot: &Snapshot, file: &RepoPath) -> Vec<LinkTarget> {
