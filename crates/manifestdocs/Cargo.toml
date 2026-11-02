@@ -2,6 +2,7 @@
 name = "manifestdocs"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 # dist builds installer download URLs from `repository`. The source repo is
 # private, so this names the public repo that hosts the releases.
