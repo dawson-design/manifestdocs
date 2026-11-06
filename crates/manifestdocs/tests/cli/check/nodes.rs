@@ -301,3 +301,27 @@ fn takes_the_size_limit_from_the_config() {
         "demo.md: warning: node body is about 2 tokens, over `node_tokens` (1); move detail into child nodes or a linked supporting doc\n\n2 nodes: 1 warning\n"
     );
 }
+
+#[test]
+fn reports_bare_true_null_and_unquoted_colons_in_title_and_summary() {
+    let cases = [
+        (
+            "bare-true-null",
+            "---\nid: fd-000002\ntitle: true\nstatus: draft\nsummary: null\n---\n",
+            "feature/feature.md:3: error: `title` must be double-quoted\n\
+             feature/feature.md:5: error: `summary` is empty\n\n2 nodes: 2 errors\n",
+        ),
+        (
+            "unquoted-colon",
+            "---\nid: fd-000002\ntitle: Search: by time\nstatus: draft\nsummary: \"S.\"\n---\n",
+            "feature/feature.md:3: error: frontmatter isn't valid YAML: mapping values are not allowed in this context\n\
+             feature/feature.md:3: error: `title` must be double-quoted\n\n2 nodes: 2 errors\n",
+        ),
+    ];
+    for (name, feature, expected) in cases {
+        let run = check_feature(name, feature);
+
+        assert_eq!(run.stdout, expected, "{name}");
+        assert_eq!(run.code, 1, "{name}");
+    }
+}

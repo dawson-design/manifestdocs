@@ -233,3 +233,40 @@ fn names_the_nested_tree_a_path_leads_into() {
         "error: `vendor/vendor.md` is in a separate tree, at `vendor`; run the command there\n"
     );
 }
+
+#[test]
+fn outlines_node_folders_whose_names_have_spaces_and_capitals() {
+    let fixture = Fixture::new(
+        "tree-folder-names",
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &node("fd-000001", "Demo")),
+            (
+                "Key Strategies/Key Strategies.md",
+                &node("fd-000002", "Key strategies"),
+            ),
+        ],
+    );
+
+    let run = fixture.run("", &["tree"]);
+
+    assert_eq!(
+        run.stdout,
+        "Demo (fd-000001, draft)  demo.md\n  Key strategies (fd-000002, draft)  Key Strategies/Key Strategies.md\n"
+    );
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn stops_when_there_is_no_tree() {
+    let fixture = Fixture::new("tree-no-tree", &[("notes.md", "# Notes\n")]);
+
+    let run = fixture.run("", &["tree"]);
+
+    assert_eq!(
+        run.stderr,
+        "error: no manifestdocs.yaml in this folder or any folder above it, up to the repo root, \
+         and no .manifestdocs/config.yaml at or above it\n"
+    );
+    assert_eq!(run.code, 2);
+}

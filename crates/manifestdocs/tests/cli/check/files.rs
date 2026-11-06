@@ -194,3 +194,22 @@ fn a_file_outside_a_tree_isnt_checked_through_a_broken_pointer() {
     );
     assert_eq!(folder.code, 2);
 }
+
+#[test]
+fn skips_a_submodule() {
+    let root = node("fd-000001", "Demo");
+    let fixture = Fixture::new(
+        "submodule",
+        &[
+            ("manifestdocs.yaml", "name: demo\n"),
+            ("demo.md", &root),
+            ("lib/.git", "gitdir: ../.git/modules/lib\n"),
+            ("lib/README.md", "[broken](nowhere.md)\n"),
+        ],
+    );
+
+    let run = fixture.check("");
+
+    assert_eq!(run.stdout, "1 node: no problems\n");
+    assert_eq!(run.code, 0);
+}

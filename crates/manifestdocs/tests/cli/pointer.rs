@@ -180,3 +180,17 @@ fn stops_when_the_pointer_cant_be_used() {
         assert_eq!(run.code, 2, "{name}");
     }
 }
+
+#[test]
+fn stops_when_the_pointers_tree_starts_with_a_tilde() {
+    let pointer = "tree: ~/cookbook-docs\n";
+    let fixture = pointer_fixture("pointer-tilde", &[(COOKBOOK_POINTER, pointer)]);
+
+    let run = fixture.check("work/cookbook/cookbook-web");
+
+    assert_eq!(
+        run.stderr,
+        "error: ../.manifestdocs/config.yaml:1: `tree` `~/cookbook-docs` must be a relative path\n"
+    );
+    assert_eq!(run.code, 2);
+}
