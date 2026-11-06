@@ -439,6 +439,11 @@ impl Section {
         }
     }
 
+    // An other link is only a path, which the list of what's left out would repeat.
+    fn trimmable(self) -> bool {
+        self != Section::OtherLinks
+    }
+
     /// The heading's text, for the list items under it.
     fn title(self) -> String {
         self.heading().trim().trim_start_matches("## ").to_owned()
@@ -510,7 +515,7 @@ fn first_fit(head: &Head, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
             false => chars(section.heading()),
         };
         let added = heading + chars(&piece.markdown);
-        let fits = limit.is_none_or(|limit| size + added <= limit);
+        let fits = !section.trimmable() || limit.is_none_or(|limit| size + added <= limit);
         if fits {
             size += added;
             opened.push(section);
@@ -522,7 +527,8 @@ fn first_fit(head: &Head, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
 
 /// The list of what's left out counts against the budget too. While the output is over the
 /// limit, this leaves out one more kept piece: the last one whose removal makes the output
-/// smaller. A short link can cost more in the list than kept, so it's passed over.
+/// smaller. Other links are never left out, and a short piece can cost more in the list than
+/// kept, so it's passed over.
 fn smaller(
     head: &Head,
     pieces: &[Piece],
@@ -534,8 +540,13 @@ fn smaller(
     if size <= limit? {
         return None;
     }
-    let kept = keep.iter().enumerate().filter(|(_, kept)| **kept);
-    let candidates = kept.map(|(i, _)| i).collect::<Vec<_>>().into_iter().rev();
+    let kept = pieces.iter().zip(keep).enumerate();
+    let trimmable = kept.filter(|(_, (piece, kept))| **kept && piece.kind.section().trimmable());
+    let candidates = trimmable
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev();
     candidates
         .map(|i| {
             let mut fewer = keep.to_vec();
