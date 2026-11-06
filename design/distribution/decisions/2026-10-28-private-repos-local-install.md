@@ -2,7 +2,7 @@
 id: dc-6f221d1
 node: fd-f44774
 title: "Private repos, mock test projects, local installs until 1.0"
-status: accepted
+status: superseded
 topic: private-repos-local-install
 decided_by: alastair
 date: 2026-10-28
