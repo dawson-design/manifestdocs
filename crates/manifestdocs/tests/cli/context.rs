@@ -204,10 +204,6 @@ fn always_includes_the_node_itself_and_lists_the_rest_in_fill_order() {
             "recipes/search/ranking-rules.md",
             "../adr/engine.md",
             "recipes/import/import.md",
-            "recipes/search/flow.png",
-            "https://example.com/g",
-            "glossary.md",
-            "https://example.com/index",
             "recipes/search/filters/filters.md",
         ]
     );
@@ -473,8 +469,8 @@ fn keeps_each_section_in_order_when_a_linked_doc_cant_be_read() {
 
 #[test]
 fn fits_any_budget_that_leaving_everything_out_would_fit() {
-    // Short links cost more as omitted entries than kept, which is where trimming has to
-    // look past them to the bigger docs before them.
+    // Other links always go in, so trimming has to reach past them to the bigger docs before
+    // them.
     let urls: String = (1..=16)
         .map(|i| format!("[{i}](//e.example/{i}) "))
         .collect();
@@ -502,7 +498,7 @@ fn fits_any_budget_that_leaving_everything_out_would_fit() {
         let (_, size) = estimate(&run);
         size.split_once(" of ").unwrap().0.parse().unwrap()
     };
-    // A budget of 1 leaves out everything but the target.
+    // A budget of 1 leaves out everything but the target and its other links.
     let smallest = used(1);
 
     for budget in (100..=900).step_by(10) {
@@ -510,6 +506,94 @@ fn fits_any_budget_that_leaving_everything_out_would_fit() {
         if smallest <= room {
             assert!(used(budget) <= room, "budget {budget}");
         }
+    }
+}
+
+#[test]
+fn keeps_every_other_link_whatever_the_budget() {
+    let fixture = cookbook("context-budget-keeps-links", ENGINE);
+
+    let run = fixture.run("docs", &["context", "fd-7c2e41", "--budget", "1"]);
+
+    let (before, _) = estimate(&run);
+    assert!(
+        before.contains(
+            "\n## Other links\n\n- recipes/search/flow.png\n- https://example.com/g\n\
+             - glossary.md\n- https://example.com/index\n\nOmitted for budget: "
+        ),
+        "{before}"
+    );
+}
+
+#[test]
+fn keeps_a_lone_other_link_when_trimming_to_fit() {
+    let feature = format!(
+        "{}See [the guide](https://e.x/1).\n",
+        node("fd-0a0002", "Feature")
+    );
+    let fixture = Fixture::new(
+        "context-lone-link",
+        &[
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/feature/feature.md", &feature),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "feature", "--budget", "1"]);
+
+    let (before, _) = estimate(&run);
+    assert!(
+        before.contains("\n## Other links\n\n- https://e.x/1\n"),
+        "{before}"
+    );
+    assert_eq!(omitted(&run), ["cookbook.md"]);
+}
+
+#[test]
+fn leaves_out_a_bigger_doc_rather_than_summaries_that_cost_more_to_name() {
+    // Each child's file path is longer than its summary line, so naming it as left out
+    // would grow the output.
+    let folder = |i: u32| format!("a-child-with-a-long-folder-name-{i}");
+    let children: Vec<(String, String)> = (1..=3)
+        .map(|i| {
+            let path = format!("docs/feature/{}/{}.md", folder(i), folder(i));
+            (path, node(&format!("fd-0c000{i}"), &format!("C{i}")))
+        })
+        .collect();
+    let feature = format!("{}See [big](big.md).\n", node("fd-0a0002", "Feature"));
+    let big = format!("# Big\n\n{}\n", "b".repeat(3_000));
+    let mut files: Vec<(&str, &str)> = vec![
+        ("docs/manifestdocs.yaml", "name: cookbook\n"),
+        (
+            "docs/cookbook.md",
+            "---\nid: fd-0a0001\ntitle: \"Cookbook\"\nstatus: draft\nsummary: \"Cookbook summary.\"\n---\n",
+        ),
+        ("docs/feature/feature.md", &feature),
+        ("docs/feature/big.md", &big),
+    ];
+    files.extend(children.iter().map(|(p, t)| (p.as_str(), t.as_str())));
+    let fixture = Fixture::new("context-look-past-summaries", &files);
+    let full = fixture.run("docs", &["context", "feature"]);
+    let (_, size) = estimate(&full);
+    let tokens: u32 = size
+        .trim_end_matches(" tokens")
+        .replace(',', "")
+        .parse()
+        .unwrap();
+    // The estimate leaves out its own line, so with 10 characters to spare every piece fits
+    // until the line that states the budget pushes the output over.
+    let budget = ((3 * tokens + 10) * 10 / 27).to_string();
+
+    let run = fixture.run("docs", &["context", "feature", "--budget", &budget]);
+
+    assert_eq!(omitted(&run), ["feature/big.md"], "{}", run.stdout);
+    for i in 1..=3 {
+        assert!(
+            run.stdout.contains(&format!("- Child: C{i} ")),
+            "{}",
+            run.stdout
+        );
     }
 }
 
