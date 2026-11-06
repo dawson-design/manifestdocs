@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::config::MergeMode;
+use crate::config::ChangeMode;
 use crate::finding::{Field, Finding, Problem};
 use crate::frontmatter::{self, Frontmatter, Key, Split};
 use crate::id::NodeId;
@@ -19,7 +19,7 @@ use crate::tree::Tree;
 /// How `decide` runs, which sets the status it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Setting {
-    pub merge: MergeMode,
+    pub changes: ChangeMode,
     pub unattended: bool,
 }
 
@@ -85,8 +85,8 @@ pub enum InputProblem {
 impl Setting {
     /// The status `decide` writes when the record doesn't give one.
     pub fn status(self) -> RecordStatus {
-        match (self.merge, self.unattended) {
-            (MergeMode::Review, false) => RecordStatus::Accepted,
+        match (self.changes, self.unattended) {
+            (ChangeMode::Review | ChangeMode::Direct, false) => RecordStatus::Accepted,
             _ => RecordStatus::Proposed,
         }
     }
@@ -97,10 +97,11 @@ impl Setting {
     }
 
     fn reason(self) -> &'static str {
-        match (self.unattended, self.merge) {
+        match (self.unattended, self.changes) {
             (true, _) => "in an unattended run",
-            (false, MergeMode::Review) => "under `decisions.merge: review`",
-            (false, MergeMode::Proposed) => "under `decisions.merge: proposed`",
+            (false, ChangeMode::Review) => "under `changes: review`",
+            (false, ChangeMode::Proposed) => "under `changes: proposed`",
+            (false, ChangeMode::Direct) => "under `changes: direct`",
         }
     }
 }

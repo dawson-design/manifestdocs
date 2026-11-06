@@ -91,7 +91,7 @@ pub fn run(args: &Args) -> Result<ExitCode> {
     let target = target(args, &cwd, roots);
     let known = known(read_records(&tree.config, &snapshot), roots, &target)?;
     let setting = Setting {
-        merge: tree.config.merge,
+        changes: tree.config.changes,
         unattended: args.unattended,
     };
     let filled = Filled {

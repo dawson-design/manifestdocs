@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_saphyr::Spanned;
 use thiserror::Error;
 
@@ -14,7 +14,7 @@ use crate::yaml;
 pub struct TreeConfig {
     pub name: TreeName,
     pub github: Option<GitHubConfig>,
-    pub merge: MergeMode,
+    pub changes: ChangeMode,
     pub statuses: Vec<StatusName>,
     /// The estimated tokens a node's body can have before `check` warns.
     pub node_tokens: NonZeroU32,
@@ -28,12 +28,18 @@ pub struct GitHubConfig {
     pub check_copied_spec: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+/// How the skills publish the tree's spec changes and decision records, and so the status
+/// `decide` writes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum MergeMode {
+pub enum ChangeMode {
+    /// A pull request the team reviews.
     #[default]
     Review,
+    /// A pull request the engineer can merge, with records `proposed` until a later one.
     Proposed,
+    /// A push to the default branch, with no pull request.
+    Direct,
 }
 
 /// The tree's name, which is also the root node's file name without `.md`.
@@ -57,7 +63,7 @@ pub struct ConfigError {
 struct RawConfig {
     name: Spanned<String>,
     github: Option<RawGitHub>,
-    decisions: Option<RawDecisions>,
+    changes: Option<ChangeMode>,
     statuses: Option<Spanned<Vec<Spanned<String>>>>,
     node_tokens: Option<Spanned<u32>>,
 }
@@ -68,12 +74,6 @@ struct RawGitHub {
     host: Spanned<String>,
     docs_repo: Spanned<String>,
     check_copied_spec: Option<bool>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawDecisions {
-    merge: Option<MergeMode>,
 }
 
 /// The file that marks a tree's root.
@@ -87,7 +87,7 @@ pub fn parse(text: &str) -> Result<TreeConfig, ConfigError> {
     Ok(TreeConfig {
         name: tree_name(&raw.name)?,
         github: raw.github.map(github).transpose()?,
-        merge: raw.decisions.and_then(|d| d.merge).unwrap_or_default(),
+        changes: raw.changes.unwrap_or_default(),
         statuses: statuses(raw.statuses)?,
         node_tokens: node_tokens(raw.node_tokens)?,
     })
@@ -221,23 +221,36 @@ mod tests {
 
         assert_eq!(config.name.as_str(), "cookbook");
         assert_eq!(config.github, None);
-        assert_eq!(config.merge, MergeMode::Review);
+        assert_eq!(config.changes, ChangeMode::Review);
         assert_eq!(status_names(&config), ["draft", "approved"]);
         assert_eq!(config.node_tokens.get(), 2_500);
     }
 
     #[test]
     fn reads_every_setting() {
-        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\n  check_copied_spec: true\ndecisions:\n  merge: proposed\nstatuses: [draft, live, Superseded]\nnode_tokens: 4000\n";
+        let text = "name: manifest-docs\ngithub:\n  host: GitHub.com\n  docs_repo: acme/cookbook-docs\n  check_copied_spec: true\nchanges: proposed\nstatuses: [draft, live, Superseded]\nnode_tokens: 4000\n";
         let config = parse(text).unwrap();
 
         let github = config.github.as_ref().unwrap();
         assert_eq!(github.host.to_string(), "github.com");
         assert_eq!(github.docs_repo.to_string(), "acme/cookbook-docs");
         assert!(github.check_copied_spec);
-        assert_eq!(config.merge, MergeMode::Proposed);
+        assert_eq!(config.changes, ChangeMode::Proposed);
         assert_eq!(status_names(&config), ["draft", "live"]);
         assert_eq!(config.node_tokens.get(), 4_000);
+    }
+
+    #[test]
+    fn reads_each_changes_value() {
+        let cases = [
+            ("review", ChangeMode::Review),
+            ("proposed", ChangeMode::Proposed),
+            ("direct", ChangeMode::Direct),
+        ];
+        for (value, mode) in cases {
+            let config = parse(&format!("name: x\nchanges: {value}\n")).unwrap();
+            assert_eq!(config.changes, mode, "{value}");
+        }
     }
 
     #[test]
@@ -267,7 +280,8 @@ mod tests {
                 "name: x\ngithub:\n  host: https://github.com\n  docs_repo: a/b\n",
                 3,
             ),
-            ("name: x\ndecisions:\n  merge: sometimes\n", 3),
+            ("name: x\nchanges: sometimes\n", 2),
+            ("name: x\ndecisions:\n  merge: review\n", 2),
             (
                 "name: x\ngithub:\n  host: github.com\n  docs_repo: a/b\n  check_copied_spec: often\n",
                 5,

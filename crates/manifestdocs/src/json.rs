@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use manifestdocs_core::check::Report;
-use manifestdocs_core::config::SUPERSEDED;
+use manifestdocs_core::config::{ChangeMode, SUPERSEDED};
 use manifestdocs_core::finding::Finding;
 use manifestdocs_core::node::{Node, NodeStatus};
 use manifestdocs_core::tree::{Entry, Tree};
@@ -50,6 +50,7 @@ struct CheckData {
 
 #[derive(Serialize)]
 struct TreeData<'a> {
+    changes: ChangeMode,
     nodes: Vec<TreeNode<'a>>,
 }
 
@@ -104,6 +105,7 @@ pub fn tree(tree: &Tree, lines: &[(usize, &Entry)], tree_root: &Path, cwd: &Path
     print(
         "tree",
         TreeData {
+            changes: tree.config.changes,
             nodes: nodes.collect(),
         },
     )
