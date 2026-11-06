@@ -8,7 +8,7 @@ allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs tree:*), Bash(man
 
 Run this before planning. The context is the reviewed record of what to build and why, so it comes before the code and before any issue text.
 
-1. Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop.
+1. Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `brew install dawson-design/tap/manifestdocs`, or with the installer script from https://github.com/dawson-design/manifestdocs/releases/latest, and stop.
 2. Find the node. A node ID is `fd-` and 6 hex characters, and a prefix of 4 or more works. If the task doesn't name a node, run `manifestdocs tree --depth 2`, pick the node whose title matches the task, and say which one you picked. If the task is a GitHub issue and `manifestdocs.yaml` has a `github` block, pass the issue as `owner/name#number` instead, and `context` finds its node.
 3. Run `manifestdocs context <id or path> --format md --budget 8000`.
 4. Read the whole output before planning:

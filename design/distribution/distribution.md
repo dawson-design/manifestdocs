@@ -7,7 +7,8 @@ summary: "Where the code is stored and how people install the tool before and af
 
 # Distribution
 
-- The source repo and test repos are private, in the `dawson-design` GitHub org. Tests run against mock projects.
-- Before 1.0, users build and install from a local clone with `cargo install --path`, and the Claude Code plugin installs from a local marketplace folder.
-- At 1.0, `dist` (cargo-dist) builds releases for macOS ARM, Linux x86 and Linux ARM, with a formula in the `dawson-design/homebrew-tap` tap. Because the source repo is private, each release is published to the public `gh-manifestdocs` repo, which also carries the binary under gh's naming convention, so `gh extension install` works and the tool runs as `gh manifestdocs`. The plugin installs from a marketplace repo.
-- Releasing needs `gh-manifestdocs` created public with one commit, since dist tags its default branch's latest commit. The source repo needs two Actions secrets: `GH_RELEASES_TOKEN`, which can write releases on `gh-manifestdocs`, and `HOMEBREW_TAP_TOKEN`, which can push to the tap.
+- The source repo, `dawson-design/manifestdocs`, is public. Tests run against mock projects.
+- Before 1.0, users build and install from a clone with `cargo install --path crates/manifestdocs`.
+- At 1.0, `dist` (cargo-dist) builds releases for macOS ARM, Linux x86 and Linux ARM, and publishes each one on the source repo. People install with Homebrew, from a formula in the `dawson-design/homebrew-tap` tap, or with dist's shell installer, such as in a Linux container. Both install `manifestdocs` and its short name `mfd`. There's no `gh` extension, because the plugin's skills and hooks look for `manifestdocs` on PATH.
+- The plugin installs from the marketplace in the source repo, with `claude plugin marketplace add dawson-design/manifestdocs`.
+- Releasing needs one Actions secret on the source repo, `HOMEBREW_TAP_TOKEN`, which can push to the tap.

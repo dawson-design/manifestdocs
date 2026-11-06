@@ -8,7 +8,7 @@ allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs decide:*), Bash(m
 
 Choices made in an issue thread are lost to the next session unless they reach the docs. The people in the thread are the deciders. You find their decisions and draft records; you never decide, and the user confirms each record.
 
-Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop. Capturing also needs `gh`, signed in, and a `github` block in `manifestdocs.yaml`.
+Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `brew install dawson-design/tap/manifestdocs`, or with the installer script from https://github.com/dawson-design/manifestdocs/releases/latest, and stop. Capturing also needs `gh`, signed in, and a `github` block in `manifestdocs.yaml`.
 
 ## Read the thread
 
