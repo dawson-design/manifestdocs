@@ -1136,3 +1136,61 @@ fn skips_a_record_file_it_cant_read() {
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
 }
+
+#[test]
+fn says_when_git_cant_tell_whether_the_docs_have_changes() {
+    let fixture = cookbook("context-git-status-fails", ENGINE);
+    git(&fixture, &["init", "-q", "-b", "main"]);
+    git(&fixture, &["add", "-A"]);
+    git(&fixture, &["commit", "-q", "-m", "Add the cookbook"]);
+    let commit = git(&fixture, &["rev-parse", "--short", "HEAD"]);
+    // A corrupt index stops `git status`, while the commit can still be read.
+    fs::write(fixture.path(".git/index"), "garbage").unwrap();
+
+    assert_eq!(
+        header(&fixture),
+        format!(
+            "# Context: fd-7c2e41 (docs main @ {commit}, 2026-10-27, uncommitted changes unknown)"
+        )
+    );
+}
+
+#[test]
+fn lists_a_link_to_the_repo_root_that_check_accepts() {
+    let feature = format!("{}See [the repo](/).\n", node("fd-0a0002", "Feature"));
+    let fixture = Fixture::new(
+        "context-repo-root",
+        &[
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/feature/feature.md", &feature),
+        ],
+    );
+
+    let check = fixture.check("docs");
+    let run = fixture.run("docs", &["context", "feature"]);
+
+    assert_eq!(check.code, 0, "{}", check.stdout);
+    let (before, _) = estimate(&run);
+    assert!(before.ends_with("\n## Other links\n\n- ..\n\n"), "{before}");
+}
+
+#[test]
+fn leaves_out_the_byte_order_mark_of_an_ancestor_with_errors() {
+    // The block never closes, so the parent has problems and its whole file is its body.
+    let parent = "\u{feff}---\nid: fd-0a0002\ntitle: \"Parent\"\nstatus: draft\n\n# Parent\n\nParent rules.\n";
+    let fixture = Fixture::new(
+        "context-ancestor-bom",
+        &[
+            ("docs/manifestdocs.yaml", "name: cookbook\n"),
+            ("docs/cookbook.md", &node("fd-0a0001", "Cookbook")),
+            ("docs/parent/parent.md", parent),
+            ("docs/parent/child/child.md", &node("fd-0a0003", "Child")),
+        ],
+    );
+
+    let run = fixture.run("docs", &["context", "fd-0a0003"]);
+
+    assert!(run.stdout.contains("Parent rules."), "{}", run.stdout);
+    assert!(!run.stdout.contains('\u{feff}'), "{}", run.stdout);
+}

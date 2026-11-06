@@ -26,8 +26,9 @@ pub enum DocsVersion {
         commit: String,
         /// The commit's date, as `YYYY-MM-DD`.
         date: String,
-        /// Whether the tree or a loaded doc has uncommitted or untracked changes.
-        uncommitted: bool,
+        /// Whether the tree or a loaded doc has uncommitted or untracked changes, or whether
+        /// git couldn't tell.
+        changes: Changes,
         /// The branch `origin/HEAD` names, when it's set.
         default_branch: Option<String>,
     },
@@ -42,6 +43,15 @@ pub enum DocsVersion {
     },
 }
 
+/// What `git status` says about the working tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Changes {
+    Clean,
+    Uncommitted,
+    /// `git status` failed, such as on a corrupt index.
+    Unknown,
+}
+
 /// An approximate token budget for the whole context, at least 1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Budget(u32);
@@ -53,7 +63,7 @@ impl Budget {
 
     /// The characters that fit: 3 a token, less 10% headroom for tokenizers that need more.
     fn characters(self) -> usize {
-        usize::try_from(self.0).unwrap_or(usize::MAX) / 10 * 9 * 3
+        usize::try_from(u64::from(self.0) * 27 / 10).unwrap_or(usize::MAX)
     }
 }
 
@@ -230,10 +240,13 @@ fn listed(snapshot: &Snapshot, target: LinkTarget) -> Option<Listed> {
     }
 }
 
+// The empty path is the repo root, which always exists, as `check` counts it.
 fn exists(snapshot: &Snapshot, path: &RepoPath) -> bool {
     let folder = format!("{}/", path.as_str());
     let mut paths = snapshot.paths.iter();
-    snapshot.paths.contains(path) || paths.any(|p| p.as_str().starts_with(&folder))
+    path.as_str().is_empty()
+        || snapshot.paths.contains(path)
+        || paths.any(|p| p.as_str().starts_with(&folder))
 }
 
 fn body_links(snapshot: &Snapshot, file: &RepoPath) -> Vec<LinkTarget> {
@@ -604,15 +617,16 @@ fn header(name: &str, version: &DocsVersion) -> String {
         branch,
         commit,
         date,
-        uncommitted,
+        changes,
         default_branch,
     } = version
     else {
         return format!("# Context: {name} (docs not in git)\n");
     };
-    let changes = match uncommitted {
-        true => ", uncommitted changes",
-        false => "",
+    let changes = match changes {
+        Changes::Clean => "",
+        Changes::Uncommitted => ", uncommitted changes",
+        Changes::Unknown => ", uncommitted changes unknown",
     };
     let on = branch.as_deref().unwrap_or("detached HEAD");
     let mut out = format!("# Context: {name} (docs {on} @ {commit}, {date}{changes})\n");
@@ -664,10 +678,7 @@ fn body<'a>(request: &'a Request, entry: &'a Entry) -> &'a str {
     }
     let file = request.snapshot.tree_root.join(entry.file.as_str());
     let text = file.and_then(|file| request.snapshot.markdown.get(&file));
-    match text.map(|text| frontmatter::split(text)) {
-        Some(frontmatter::Split::Present(frontmatter)) => frontmatter.body,
-        _ => text.map_or("", String::as_str),
-    }
+    text.map_or("", |text| frontmatter::body(text).0)
 }
 
 /// A body as the context prints it, without its leading blank lines or trailing space.
@@ -997,6 +1008,15 @@ mod tests {
     fn needs_a_budget_of_at_least_one_token() {
         assert_eq!(Budget::new(0), None);
         assert!(Budget::new(1).is_some());
+    }
+
+    #[test]
+    fn fits_nine_tenths_of_three_characters_a_token() {
+        let characters = |tokens| Budget::new(tokens).unwrap().characters();
+
+        assert_eq!(characters(9), 24);
+        assert_eq!(characters(19), 51);
+        assert_eq!(characters(1_000), 2_700);
     }
 
     #[test]
