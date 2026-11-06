@@ -8,7 +8,7 @@ allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs show:*), Bash(man
 
 This skill only reports. It never edits code, docs or GitHub.
 
-1. Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop.
+1. Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `brew install dawson-design/tap/manifestdocs`, or with the installer script from https://github.com/dawson-design/manifestdocs/releases/latest, and stop.
 2. Find the node. Use the one the user named, or the one the session loaded with `manifestdocs context`. Otherwise run `manifestdocs tree --depth 2`, pick the node whose title matches the change, and say which one you picked.
 3. Run `manifestdocs context <id or path> --format md --budget 8000` and read the whole output.
 4. Find the change. Use the base the user named, or else `git merge-base HEAD origin/HEAD`. Run `git diff <base>` to see committed and uncommitted changes together, and `git log --oneline <base>..HEAD` to see the commits.

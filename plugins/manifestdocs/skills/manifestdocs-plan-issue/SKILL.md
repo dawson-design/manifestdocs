@@ -8,7 +8,7 @@ allowed-tools: Bash(manifestdocs context:*), Bash(manifestdocs work:*), Bash(man
 
 The node is the reviewed record of what to build. An issue says which part of it someone builds, and links to the node for the rest. You draft the issues; the user approves each one before you create it.
 
-Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop. Planning also needs `gh`, signed in, and a `github` block in `manifestdocs.yaml`.
+Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `brew install dawson-design/tap/manifestdocs`, or with the installer script from https://github.com/dawson-design/manifestdocs/releases/latest, and stop. Planning also needs `gh`, signed in, and a `github` block in `manifestdocs.yaml`.
 
 ## Read the node and its work
 

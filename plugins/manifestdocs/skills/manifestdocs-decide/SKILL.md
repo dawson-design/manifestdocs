@@ -8,7 +8,7 @@ allowed-tools: Bash(manifestdocs decide:*), Bash(manifestdocs decisions:*), Bash
 
 Records go to a shared docs repo that every engineer and agent on the project reads. The engineer is the decider. You notice decisions and draft them; you never decide, and you never confirm a record yourself.
 
-Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `cargo install --path crates/manifestdocs` from a clone of the Manifest Docs repo, and stop.
+Check for the binary with `command -v manifestdocs`. If it's missing, tell the user to install it with `brew install dawson-design/tap/manifestdocs`, or with the installer script from https://github.com/dawson-design/manifestdocs/releases/latest, and stop.
 
 ## What counts as a decision
 

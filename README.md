@@ -4,13 +4,19 @@ Manifest Docs turns a folder of Markdown in a docs repo into a feature tree that
 
 ## Install
 
-Build from a clone of this repo, with Rust installed:
+With Homebrew:
 
 ```sh
-cargo install --path crates/manifestdocs
+brew install dawson-design/tap/manifestdocs
 ```
 
-This installs two binaries, `manifestdocs` and its short name `mfd`, which behave the same.
+Or with the installer script, such as in a Linux container:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/dawson-design/manifestdocs/releases/latest/download/manifestdocs-installer.sh | sh
+```
+
+Either installs two binaries, `manifestdocs` and its short name `mfd`, which behave the same. To build from a clone instead, with Rust installed, run `cargo install --path crates/manifestdocs`.
 
 ## Start a tree
 
@@ -78,10 +84,10 @@ Estimated size: 236 of 8,000 tokens
 
 ## Use it from Claude Code
 
-The plugin in `plugins/manifestdocs` has six skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree, `manifestdocs-plan-issue`, which drafts issues linked to a node and creates them with `gh` once approved, and `manifestdocs-capture`, which records a decision made in an issue's thread. Its commands follow one workflow: `/mfd:explore`, `/mfd:propose`, `/mfd:apply`, `/mfd:verify` and `/mfd:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/mfd:record` reviews the session for decisions worth recording, and `/mfd:capture` does the same for an issue's thread. `/mfd:stale` helps act on open issues whose node changed after they were planned. Install it from a clone of this repo:
+The plugin in `plugins/manifestdocs` has six skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree, `manifestdocs-plan-issue`, which drafts issues linked to a node and creates them with `gh` once approved, and `manifestdocs-capture`, which records a decision made in an issue's thread. Its commands follow one workflow: `/mfd:explore`, `/mfd:propose`, `/mfd:apply`, `/mfd:verify` and `/mfd:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/mfd:record` reviews the session for decisions worth recording, and `/mfd:capture` does the same for an issue's thread. `/mfd:stale` helps act on open issues whose node changed after they were planned. Install it from this repo's marketplace:
 
 ```sh
-claude plugin marketplace add /path/to/manifestdocs
+claude plugin marketplace add dawson-design/manifestdocs
 claude plugin install mfd@manifestdocs
 ```
 
