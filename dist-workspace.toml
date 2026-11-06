@@ -8,21 +8,14 @@ cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["homebrew"]
+installers = ["homebrew", "shell"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
-# The source repo is private, so releases go to the public gh extension repo,
-# where Homebrew and `gh extension install` can download them.
-github-releases-repo = "dawson-design/gh-manifestdocs"
-# Keep the private source out of the public release
-source-tarball = false
-# The README is for building from a clone of the private repo, so archives ship only the binaries
-auto-includes = false
 # A custom Homebrew tap to publish to
 tap = "dawson-design/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
 # Jobs whose `artifacts-*` uploads join the release before it is created
-global-artifacts-jobs = ["./gh-extension-assets", "./release-tests"]
+global-artifacts-jobs = ["./release-tests"]
