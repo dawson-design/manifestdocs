@@ -78,11 +78,11 @@ Estimated size: 236 of 8,000 tokens
 
 ## Use it from Claude Code
 
-The plugin in `plugins/manifestdocs` has six skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree, `manifestdocs-plan-issue`, which drafts issues linked to a node and creates them with `gh` once approved, and `manifestdocs-capture`, which records a decision made in an issue's thread. Its commands follow one workflow: `/manifestdocs:explore`, `/manifestdocs:propose`, `/manifestdocs:apply`, `/manifestdocs:verify` and `/manifestdocs:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/manifestdocs:record` reviews the session for decisions worth recording, and `/manifestdocs:capture` does the same for an issue's thread. `/manifestdocs:stale` helps act on open issues whose node changed after they were planned. Install it from a clone of this repo:
+The plugin in `plugins/manifestdocs` has six skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, `manifestdocs-verify`, which checks a change against its node, `manifestdocs-decide`, which drafts decision records for the engineer to confirm and opens their docs PR from a worktree, `manifestdocs-plan-issue`, which drafts issues linked to a node and creates them with `gh` once approved, and `manifestdocs-capture`, which records a decision made in an issue's thread. Its commands follow one workflow: `/mfd:explore`, `/mfd:propose`, `/mfd:apply`, `/mfd:verify` and `/mfd:record`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. `/mfd:record` reviews the session for decisions worth recording, and `/mfd:capture` does the same for an issue's thread. `/mfd:stale` helps act on open issues whose node changed after they were planned. Install it from a clone of this repo:
 
 ```sh
 claude plugin marketplace add /path/to/manifestdocs
-claude plugin install manifestdocs@manifestdocs
+claude plugin install mfd@manifestdocs
 ```
 
 For agent tools without skills, copy `plugins/manifestdocs/AGENTS-snippet.md` into `AGENTS.md`.
