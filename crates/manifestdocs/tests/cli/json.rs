@@ -133,6 +133,7 @@ fn tree_lists_nodes_in_outline_order_with_parent_ids() {
             "schema": 1,
             "command": "tree",
             "data": {
+                "changes": "review",
                 "nodes": [
                     { "id": "fd-0a0001", "title": "Cookbook", "status": "draft", "file": "cookbook.md", "parent": null },
                     { "id": "fd-0a0002", "title": "Recipes", "status": "draft", "file": "recipes/recipes.md", "parent": "fd-0a0001" },
@@ -155,6 +156,7 @@ fn tree_of_a_folder_names_the_parent_above_it() {
     assert_eq!(
         parsed(&run)["data"],
         json!({
+            "changes": "review",
             "nodes": [
                 { "id": "fd-7c2e41", "title": "Search", "status": "approved", "file": "recipes/search/search.md", "parent": "fd-0a0002" }
             ]
@@ -171,6 +173,7 @@ fn tree_from_a_subfolder_prints_paths_relative_to_it() {
     assert_eq!(
         parsed(&run)["data"],
         json!({
+            "changes": "review",
             "nodes": [
                 { "id": "fd-0a0001", "title": "Cookbook", "status": "draft", "file": "../cookbook.md", "parent": null },
                 { "id": "fd-0a0002", "title": "Recipes", "status": "draft", "file": "recipes.md", "parent": "fd-0a0001" }

@@ -148,7 +148,7 @@ $ mfd decide --file record.md
 recipes/search/decisions/2026-10-28-search-page-size.md
 ```
 
-`decide` fills in the ID, today's date and the status: `accepted` under `decisions.merge: review`, the default, and `proposed` under `merge: proposed` or with `--unattended`. It writes only the record, plus `status: superseded` in the record it supersedes, and warns when the docs clone has uncommitted changes or commits that aren't on its default branch. It reports every problem in the input with its line and a fix, and writes nothing until all are fixed. Running it again with the same node, topic and body prints the existing path; a different body on the same topic needs `supersedes`.
+`decide` fills in the ID, today's date and the status: `accepted` under `changes: review`, the default, and under `changes: direct`, and `proposed` under `changes: proposed` or with `--unattended`. It writes only the record, plus `status: superseded` in the record it supersedes, and warns when the docs clone has uncommitted changes or commits that aren't on its default branch. It reports every problem in the input with its line and a fix, and writes nothing until all are fixed. Running it again with the same node, topic and body prints the existing path; a different body on the same topic needs `supersedes`.
 
 `--dry-run` prints the record and its path without writing. `--unattended` writes to `.manifestdocs/decisions/` in the current repo, which ignores itself, for sandboxed runs whose docs mount is read-only. `--out <dir>` writes to another folder.
 
