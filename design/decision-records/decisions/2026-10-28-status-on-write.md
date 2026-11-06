@@ -2,7 +2,7 @@
 id: dc-2eed984
 node: fd-ae6745
 title: "decide writes accepted under review, proposed otherwise"
-status: accepted
+status: superseded
 topic: status-on-write
 decided_by: alastair
 date: 2026-10-28

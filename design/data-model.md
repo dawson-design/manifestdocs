@@ -18,11 +18,11 @@ struct TreeConfig {
     name: TreeName,                  // file-name-safe; names the root node file
     node_tokens: NonZeroU32,         // default 2,500; `check` warns about a body over it on a node with child nodes
     github: Option<GitHubConfig>,    // None: work commands are off
-    merge: MergeMode,                // default Review
+    changes: ChangeMode,             // default Review
     statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"; never empty
 }
 struct GitHubConfig { host: Host, docs_repo: RepoRef, check_copied_spec: bool }   // default false
-enum MergeMode { Review, Proposed }
+enum ChangeMode { Review, Proposed, Direct }
 struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
 // .manifestdocs/config.yaml
@@ -130,7 +130,7 @@ The types can't express these, so `check` does.
 ## Defaults and edge cases
 
 - `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, including when it's blank. Listing `superseded` in it, in any case, changes nothing, and an empty list is an error. A status name is one word with no spaces.
-- `merge` defaults to `review`.
+- `changes` defaults to `review`.
 - An unknown key in `manifestdocs.yaml` is an error, because a typo such as `statues:` would otherwise fall back to the default. An unknown node field is a warning, so teams can add their own fields and typos still show.
 - Stored node IDs are exactly 6 hex characters after `fd-`. Commands accept a prefix of 4 to 6, and a prefix that matches more than one node is an error that lists the matches.
 - A file in a node file's position with frontmatter but no `id` gets a warning. A file there with no frontmatter is a supporting doc.
