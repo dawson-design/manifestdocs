@@ -89,7 +89,7 @@ fn reports_every_input_error_in_one_pass_with_its_line_and_fix() {
     let draft = "---\nid: dc-1234567\nnode: fd-000002\ntitle: Search page size\nstatus: accepted\ntopic: page-size\nowner: search-team\n---\n";
     let fixture = cookbook(
         "decide-errors",
-        "name: demo\ndecisions:\n  merge: proposed\n",
+        "name: demo\nchanges: proposed\n",
         &[("draft.md", draft)],
     );
 
@@ -99,7 +99,7 @@ fn reports_every_input_error_in_one_pass_with_its_line_and_fix() {
         run.stdout,
         "draft.md:2: error: `id` is given, but decide generates it\n  fix: remove `id`\n\
          draft.md:4: error: `title` must be double-quoted\n  fix: put the value of `title` in double quotes\n\
-         draft.md:5: error: status `accepted` isn't allowed: decide writes `proposed` under `decisions.merge: proposed`\n  fix: remove `status`, and decide sets it\n\
+         draft.md:5: error: status `accepted` isn't allowed: decide writes `proposed` under `changes: proposed`\n  fix: remove `status`, and decide sets it\n\
          draft.md:7: error: unknown field `owner`\n  fix: remove `owner`, or correct its name\n\
          \n4 errors: nothing written\n"
     );
@@ -156,10 +156,10 @@ fn dry_run_prints_the_record_and_its_path_without_writing() {
 }
 
 #[test]
-fn writes_proposed_when_the_tree_merges_decisions_as_proposed() {
+fn writes_proposed_under_changes_proposed() {
     let fixture = cookbook(
-        "decide-merge-proposed",
-        "name: demo\ndecisions:\n  merge: proposed\n",
+        "decide-changes-proposed",
+        "name: demo\nchanges: proposed\n",
         &[("draft.md", DRAFT)],
     );
 
@@ -168,6 +168,56 @@ fn writes_proposed_when_the_tree_merges_decisions_as_proposed() {
     let text = fixture.read(WRITTEN);
     assert_eq!(run.code, 0, "{}", run.stdout);
     assert_eq!(text, written(&id_in(&text), "proposed"));
+}
+
+#[test]
+fn writes_accepted_under_changes_direct() {
+    let fixture = cookbook(
+        "decide-changes-direct",
+        "name: demo\nchanges: direct\n",
+        &[("draft.md", DRAFT)],
+    );
+
+    let run = decide(&fixture, &["--file", "draft.md"]);
+
+    let text = fixture.read(WRITTEN);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    assert_eq!(text, written(&id_in(&text), "accepted"));
+}
+
+#[test]
+fn unattended_writes_proposed_under_changes_direct() {
+    let fixture = cookbook(
+        "decide-changes-direct-unattended",
+        "name: demo\nchanges: direct\n",
+        &[("draft.md", DRAFT)],
+    );
+
+    let run = decide(&fixture, &["--file", "draft.md", "--unattended"]);
+
+    let text = fixture.read(".manifestdocs/decisions/2026-10-29-page-size.md");
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    assert_eq!(text, written(&id_in(&text), "proposed"));
+}
+
+#[test]
+fn rejects_the_old_decisions_merge_setting_and_names_changes() {
+    let fixture = cookbook(
+        "decide-old-merge-setting",
+        "name: demo\ndecisions:\n  merge: review\n",
+        &[("draft.md", DRAFT)],
+    );
+
+    let run = decide(&fixture, &["--file", "draft.md"]);
+
+    assert_eq!(run.code, 2, "{}", run.stdout);
+    assert!(
+        run.stderr
+            .contains("unknown field `decisions`, expected one of name, github, changes,"),
+        "{}",
+        run.stderr
+    );
+    assert!(!fixture.path("search/decisions").exists());
 }
 
 #[test]

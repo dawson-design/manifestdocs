@@ -62,7 +62,7 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 
 ## Status
 
-`decide` sets the status from the repo's `decisions.merge` setting. Under `review`, it writes `accepted`, because the PR review is the approval. Under `proposed`, it writes `proposed`, and a later one-line PR accepts the record. Unattended runs always write `proposed`, and under `review` the person who opens their PR changes the records they endorse to `accepted` in that PR. A record gets the same status whether an agent or a person drafted it; `decided_by` and git history show who. Reviewers reject a record by setting `rejected` with the reason and merging it, not by closing the PR, so the record still stops the same idea from coming back.
+`decide` sets the status from the tree's `changes` setting. Under `review`, it writes `accepted`, because the PR review is the approval. Under `proposed`, it writes `proposed`, and a later one-line PR accepts the record. Under `direct`, it writes `accepted`, because the team has chosen to put changes in force without review. Unattended runs always write `proposed`, and under `review` the person who opens their PR changes the records they endorse to `accepted` in that PR. A record gets the same status whether an agent or a person drafted it; `decided_by` and git history show who. Reviewers reject a record by setting `rejected` with the reason and merging it, not by closing the PR, so the record still stops the same idea from coming back.
 
 ## Input
 
@@ -75,14 +75,14 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 | Setting | Interactive session | Sandboxed factory run |
 |---|---|---|
 | Where `mfd decide` writes | The node's `decisions/` folder in a git worktree of the docs repo, on a new branch from the default branch. The `manifestdocs-decide` skill creates the worktree, so the main docs clone never switches branches | `.manifestdocs/decisions/` in the code repo's working directory, because the docs mount is read-only |
-| What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `merge: review` the team reviews the PR; with `merge: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
+| What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `changes: review` the team reviews the PR; with `changes: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
 | Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted` | The same, after the run |
 
 When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/pointer/pointer.md) beside it can be. `--out <dir>` overrides the folder. An unattended run, or an `--out` folder outside the tree, leaves the tree's records as they are, so `decide` never writes to a read-only docs mount: when the record supersedes one in the tree, `decide` warns that the older record isn't marked, and whoever moves the new record into the docs marks it. A draft it supersedes in the same folder is marked.
 
 When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR, apart from the code.
 
-The personal factory can use `merge: proposed` for speed. A team whose changes need review before they take effect uses `merge: review`.
+The personal factory can use `changes: proposed` for speed. A team whose changes need review before they take effect uses `changes: review`.
 
 ## Read path
 
