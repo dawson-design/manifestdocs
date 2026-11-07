@@ -90,6 +90,11 @@ pub fn parse(text: &str) -> Result<TreeConfig, ConfigError> {
     })
 }
 
+/// `manifestdocs.yaml` as a path in the tree.
+pub fn file_path() -> TreePath {
+    TreePath::new(FILE_NAME).expect("the config file name is one segment")
+}
+
 impl TreeConfig {
     /// `<name>.md` in the tree's root folder.
     pub fn root_node_file(&self) -> TreePath {

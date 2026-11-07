@@ -14,6 +14,7 @@ pub mod paths;
 pub mod pointer;
 pub mod refs;
 pub mod slug;
+pub mod snapshot;
 pub mod tokens;
 pub mod tree;
 mod yaml;

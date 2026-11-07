@@ -21,19 +21,19 @@ pub fn run(title: Option<&str>) -> Result<ExitCode> {
         None => folder_name(&cwd)?,
     };
     let name = tree_name(title)?;
-    let root_file = format!("{}.md", name.as_str());
+    // A name such as `null` reads as YAML's null unless it's quoted.
+    let config_text = format!("name: \"{}\"\n", name.as_str());
+    let config = config::parse(&config_text).map_err(|error| anyhow!(error))?;
+    let root_file = config.root_node_file();
     for file in [config::FILE_NAME, root_file.as_str()] {
         // Unlike `exists`, this also sees a symlink whose target is missing.
         if fs::symlink_metadata(cwd.join(file)).is_ok() {
             bail!("{file} already exists");
         }
     }
-    // A name such as `null` reads as YAML's null unless it's quoted.
-    let config_text = format!("name: \"{}\"\n", name.as_str());
-    let config = config::parse(&config_text).map_err(|error| anyhow!(error))?;
     let id = NodeId::from_bytes(random_bytes()?);
     let root_text = root_node(&id, title, &config, &root_file)?;
-    write_tree(&cwd, &root_file, &root_text, &config_text)?;
+    write_tree(&cwd, root_file.as_str(), &root_text, &config_text)?;
     write_stdout(&format!(
         "created {} and {root_file} ({id})\n",
         config::FILE_NAME
@@ -59,17 +59,23 @@ fn tree_name(title: &str) -> Result<TreeName> {
 
 /// The root node's text. It's read back through the node parser first, so `init` never
 /// writes a node that `check` rejects or a title that YAML changes.
-fn root_node(id: &NodeId, title: &str, config: &TreeConfig, root_file: &str) -> Result<String> {
+fn root_node(
+    id: &NodeId,
+    title: &str,
+    config: &TreeConfig,
+    root_file: &TreePath,
+) -> Result<String> {
     let status = config.statuses.first().map_or("draft", |s| s.as_str());
     let quoted = double_quoted(title);
     let summary = double_quoted(&format!("TODO: one sentence about {title}."));
     let text = format!(
         "---\nid: {id}\ntitle: {quoted}\nstatus: {status}\nsummary: {summary}\n---\n\n# {title}\n"
     );
-    let file = TreePath::new(root_file).unwrap_or_default();
-    let parsed = read_node_file(&file, NodeLocation::Root, &text, config);
+    let parsed = read_node_file(root_file, NodeLocation::Root, &text, config);
     let kept = parsed.is_some_and(|parsed| {
-        let same_title = parsed.node.is_some_and(|node| node.title.as_str() == title);
+        let same_title = parsed
+            .node()
+            .is_some_and(|node| node.title.as_str() == title);
         same_title && parsed.findings.is_empty()
     });
     if !kept {

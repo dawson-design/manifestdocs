@@ -18,11 +18,11 @@ struct TreeConfig {
     name: TreeName,                  // file-name-safe; names the root node file
     node_tokens: NonZeroU32,         // default 2,500; `check` warns about a body over it on a node with child nodes
     github: Option<GitHubConfig>,    // None: work commands are off
-    merge: MergeMode,                // default Review
+    changes: ChangeMode,             // default Review
     statuses: Vec<StatusName>,       // default [draft, approved]; never "superseded"; never empty
 }
 struct GitHubConfig { host: Host, docs_repo: RepoRef }
-enum MergeMode { Review, Proposed }
+enum ChangeMode { Review, Proposed, Direct }
 struct ConfigError { line: Option<u32>, message: String }   // fatal: no tree without a config
 
 // .manifestdocs/config.yaml
@@ -32,9 +32,7 @@ struct NodeId(String);               // "fd-" + exactly 6 lowercase hex
 struct NodeIdPrefix(String);         // CLI input only: "fd-" + 4 to 6 hex, with `show`
 enum NodeSelector { Id(NodeIdPrefix), Path(TreePath) }
 
-struct Node {
-    id: NodeId,
-    location: NodeLocation,          // from where the file is, never from frontmatter
+struct Node {                        // its ID and location are kept beside it, in Entry
     title: NonEmptyString,
     status: NodeStatus,
     summary: NonEmptyString,
@@ -55,7 +53,7 @@ struct Tree {
 }
 struct Entry {                             // a node file whose `id` parses
     file: TreePath,
-    location: NodeLocation,
+    location: NodeLocation,                // from where the file is, never from frontmatter
     id: NodeId,
     node: Result<Node, Vec<Finding>>,      // Err: the errors in its frontmatter
 }
@@ -64,15 +62,17 @@ struct Entry {                             // a node file whose `id` parses
 struct Snapshot {
     tree_root: RepoPath,                   // "" when the tree is the repo root
     paths: BTreeSet<RepoPath>,             // every file in the repo that git doesn't ignore
-    markdown: BTreeMap<RepoPath, String>,  // every .md under the tree, plus outside anchor targets
+    markdown: BTreeMap<RepoPath, String>,  // what the core named: for `check`, every .md under the tree plus
+                                           // outside anchor targets; otherwise the node files
 }
 
 // What `context` reads and assembles (M1)
 enum DocsVersion {
     NotInGit,
-    WorkingTree { branch: Option<String>, commit: String, date: String, uncommitted: bool, default_branch: Option<String> },
-    // branch is None when HEAD is detached; uncommitted covers the tree and the loaded docs
+    WorkingTree { branch: Option<String>, commit: String, date: String, changes: Changes, default_branch: Option<String> },
+    // branch is None when HEAD is detached; changes covers the tree and the loaded docs
 }
+enum Changes { Clean, Uncommitted, Unknown }   // Unknown: `git status` failed
 struct Budget(u32);                    // tokens, at least 1; fills characters / 3, less 10%
 struct Links {                         // one hop from the target's body, in order of first appearance
     docs: Vec<RepoPath>,               // local Markdown that isn't a node, loaded in full
@@ -80,6 +80,7 @@ struct Links {                         // one hop from the target's body, in ord
     listed: Vec<Listed>,               // other files, folders, URLs, and links inside loaded docs
 }
 enum Listed { Path(RepoPath), Url(String) }
+enum LinkedDoc { Text(String), Unreadable }   // each doc in Links.docs, as read; an unreadable one is listed
 // M1 also adds TreeConfig.node_tokens: u32 (default 2500, at least 1)
 // and Problem::NodeTooLarge { tokens: u32, limit: u32 }, a warning
 
@@ -91,7 +92,7 @@ enum LinkTarget {
 struct Finding { file: TreePath, line: Option<u32>, problem: Problem }   // file can be a folder
 enum Problem {
     UnparsableFrontmatter(String), MissingField(Field), EmptyField(Field), UnquotedField(Field),
-    WrongType { field: Field, expected: &'static str },
+    WrongType(Field),                                   // the message names the type the field takes
     MalformedId(String), MalformedRepoRef(String), MalformedIssueRef(String),
     DuplicateId { also_in: TreePath }, UnknownStatus(String),
     SupersededWithoutReplacement, ReplacementWithoutSuperseded, SupersededBySelf,
@@ -130,7 +131,7 @@ The types can't express these, so `check` does.
 ## Defaults and edge cases
 
 - `superseded` is built in, so `statuses` lists the others. `statuses` defaults to `[draft, approved]`, including when it's blank. Listing `superseded` in it, in any case, changes nothing, and an empty list is an error. A status name is one word with no spaces.
-- `merge` defaults to `review`.
+- `changes` defaults to `review`.
 - An unknown key in `manifestdocs.yaml` is an error, because a typo such as `statues:` would otherwise fall back to the default. An unknown node field is a warning, so teams can add their own fields and typos still show.
 - Stored node IDs are exactly 6 hex characters after `fd-`. Commands accept a prefix of 4 to 6, and a prefix that matches more than one node is an error that lists the matches.
 - A file in a node file's position with frontmatter but no `id` gets a warning. A file there with no frontmatter is a supporting doc.

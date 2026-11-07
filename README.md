@@ -76,11 +76,11 @@ Estimated size: 236 of 8,000 tokens
 
 ## Use it from Claude Code
 
-The plugin in `plugins/manifestdocs` has three skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, and `manifestdocs-verify`, which checks a change against its node. Its commands follow one workflow: `/manifestdocs:explore`, `/manifestdocs:propose`, `/manifestdocs:apply` and `/manifestdocs:verify`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. Install it from a clone of this repo:
+The plugin in `plugins/manifestdocs` has three skills: `manifestdocs-context`, which loads a node's context before planning, `manifestdocs-author`, which writes valid nodes and proposes spec changes, and `manifestdocs-verify`, which checks a change against its node. Its commands follow one workflow: `/mfd:explore`, `/mfd:propose`, `/mfd:apply` and `/mfd:verify`. It also adds an outline of the tree at session start and a `check` after each Markdown edit. Install it from a clone of this repo:
 
 ```sh
 claude plugin marketplace add /path/to/manifestdocs
-claude plugin install manifestdocs@manifestdocs
+claude plugin install mfd@manifestdocs
 ```
 
 For agent tools without skills, copy `plugins/manifestdocs/AGENTS-snippet.md` into `AGENTS.md`.

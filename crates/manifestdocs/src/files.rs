@@ -6,9 +6,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 use ignore::{DirEntry, WalkBuilder};
-use manifestdocs_core::check::{Snapshot, markdown_to_read, outside_anchor_targets};
+use manifestdocs_core::check::{markdown_to_read, outside_anchor_targets};
 use manifestdocs_core::config::{self, TreeConfig};
+use manifestdocs_core::context::LinkedDoc;
 use manifestdocs_core::paths::RepoPath;
+use manifestdocs_core::snapshot::Snapshot;
 use manifestdocs_core::tree::{Tree, node_files_to_read, read_tree};
 
 use crate::locate::Roots;
@@ -31,7 +33,7 @@ pub fn tree(roots: &Roots, cwd: &Path) -> Result<Tree> {
     Ok(tree_and_snapshot(roots, cwd)?.0)
 }
 
-/// The tree, and the snapshot it was read from, which holds only the node files so far.
+/// The tree, and the snapshot it was read from, which holds only the node files.
 pub fn tree_and_snapshot(roots: &Roots, cwd: &Path) -> Result<(Tree, Snapshot)> {
     let config = read_config(&roots.tree_root, cwd)?;
     let mut snapshot = listed(roots)?;
@@ -40,14 +42,14 @@ pub fn tree_and_snapshot(roots: &Roots, cwd: &Path) -> Result<(Tree, Snapshot)> 
     Ok((read_tree(&config, &snapshot), snapshot))
 }
 
-/// Reads the docs a node links to into `snapshot`. A doc that can't be read as UTF-8 text is
-/// skipped, so `context` lists it rather than failing.
-pub fn read_linked_docs(snapshot: &mut Snapshot, docs: &[RepoPath], roots: &Roots) {
-    for doc in docs {
-        if let Ok(text) = fs::read_to_string(roots.repo_root.join(doc.as_str())) {
-            snapshot.markdown.insert(doc.clone(), text);
-        }
-    }
+/// Reads the docs a node links to. A doc that can't be read as UTF-8 text is `Unreadable`, so
+/// `context` lists it rather than failing.
+pub fn read_linked_docs(docs: &[RepoPath], roots: &Roots) -> BTreeMap<RepoPath, LinkedDoc> {
+    let read = |doc: &RepoPath| match fs::read_to_string(roots.repo_root.join(doc.as_str())) {
+        Ok(text) => LinkedDoc::Text(text),
+        Err(_) => LinkedDoc::Unreadable,
+    };
+    docs.iter().map(|doc| (doc.clone(), read(doc))).collect()
 }
 
 /// Lists the repo's files and reads the tree's Markdown.

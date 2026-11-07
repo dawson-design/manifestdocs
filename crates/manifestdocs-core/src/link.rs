@@ -20,11 +20,16 @@ pub enum LinkTarget {
     External(String),
 }
 
-/// The repo's files, the folders that hold them, and the anchors in the Markdown that was
-/// read, for checking that local links resolve.
-pub struct Targets<'a> {
+/// The repo's files and the folders that hold them.
+pub struct RepoFiles<'a> {
     files: &'a BTreeSet<RepoPath>,
     folders: BTreeSet<&'a str>,
+}
+
+/// The repo's files and the anchors in the Markdown that was read, for checking that local
+/// links resolve.
+pub struct Targets<'a> {
+    files: RepoFiles<'a>,
     anchors: BTreeMap<&'a RepoPath, BTreeSet<String>>,
 }
 
@@ -53,27 +58,37 @@ pub fn resolve(target: &str, from: &RepoPath) -> Option<LinkTarget> {
     Some(LinkTarget::Local { path, anchor })
 }
 
-impl<'a> Targets<'a> {
-    pub fn new(files: &'a BTreeSet<RepoPath>, markdown: &'a BTreeMap<RepoPath, String>) -> Self {
+impl<'a> RepoFiles<'a> {
+    pub fn new(files: &'a BTreeSet<RepoPath>) -> Self {
         let folders = files
             .iter()
             .flat_map(|file| folders_of(file.as_str()))
             .collect();
+        Self { files, folders }
+    }
+
+    /// Whether `path` is a file or folder in the repo, matching case exactly as GitHub does.
+    /// The empty path is the repo root, which always exists.
+    pub fn exists(&self, path: &RepoPath) -> bool {
+        let path_str = path.as_str();
+        path_str.is_empty() || self.files.contains(path) || self.folders.contains(path_str)
+    }
+}
+
+impl<'a> Targets<'a> {
+    pub fn new(files: &'a BTreeSet<RepoPath>, markdown: &'a BTreeMap<RepoPath, String>) -> Self {
         let anchors = markdown
             .iter()
             .map(|(path, text)| (path, anchors_in(text)))
             .collect();
         Self {
-            files,
-            folders,
+            files: RepoFiles::new(files),
             anchors,
         }
     }
 
-    /// Whether `path` is a file or folder in the repo, matching case exactly as GitHub does.
     pub fn exists(&self, path: &RepoPath) -> bool {
-        let path_str = path.as_str();
-        path_str.is_empty() || self.files.contains(path) || self.folders.contains(path_str)
+        self.files.exists(path)
     }
 
     /// Whether `anchor` matches a heading or HTML anchor in `path`. Paths whose Markdown wasn't

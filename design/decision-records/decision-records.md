@@ -54,7 +54,7 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 
 **During a session.** When the engineer makes a call that passes the test, the agent drafts a record and asks the engineer to confirm, edit or drop it. On confirmation, the agent runs `mfd decide`. When a record names a decider, it's the engineer; the agent is never the decider.
 
-When a decision changes what a feature does, the agent also edits the node's requirements in the same docs PR. The spec then states the behaviour, and the record keeps the why and the rejected options. A record that supersedes another names the old choice under **Rejected**, with the reason it was dropped.
+When a decision changes what a feature does, the agent also edits the node's requirements in the same docs change. The spec then states the behaviour, and the record keeps the why and the rejected options. A record that supersedes another names the old choice under **Rejected**, with the reason it was dropped.
 
 A decision that applies to several nodes goes on their nearest common ancestor, which `context` loads for each of them. One that applies to no node goes on the root node.
 
@@ -62,7 +62,7 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 
 ## Status
 
-`decide` sets the status from the repo's `decisions.merge` setting. Under `review`, it writes `accepted`, because the PR review is the approval. Under `proposed`, it writes `proposed`, and a later one-line PR accepts the record. Unattended runs always write `proposed`, and under `review` the person who opens their PR changes the records they endorse to `accepted` in that PR. A record gets the same status whether an agent or a person drafted it; `decided_by` and git history show who. Reviewers reject a record by setting `rejected` with the reason and merging it, not by closing the PR, so the record still stops the same idea from coming back.
+`decide` sets the status from the tree's `changes` setting. Under `review`, it writes `accepted`, because the PR review is the approval. Under `proposed`, it writes `proposed`, and a later one-line PR accepts the record. Under `direct`, it writes `accepted`, because the team has chosen to put changes in force without review. Unattended runs always write `proposed`, and under `review` the person who opens their PR changes the records they endorse to `accepted` in that PR. A record gets the same status whether an agent or a person drafted it; `decided_by` and git history show who. Reviewers reject a record by setting `rejected` with the reason and merging it, not by closing the PR, so the record still stops the same idea from coming back.
 
 ## Input
 
@@ -75,18 +75,18 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 | Setting | Interactive session | Sandboxed factory run |
 |---|---|---|
 | Where `mfd decide` writes | The node's `decisions/` folder in a git worktree of the docs repo, on a new branch from the default branch. The `manifestdocs-decide` skill creates the worktree, so the main docs clone never switches branches | `.manifestdocs/decisions/` in the code repo's working directory, because the docs mount is read-only |
-| What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `merge: review` the team reviews the PR; with `merge: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
-| Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted` | The same, after the run |
+| What happens next | The skill commits and [publishes](../plugin/plugin.md#publishing-changes) the record, then removes the worktree. Under `changes: review` the team reviews the PR; under `proposed` the engineer can merge it directly; under `direct` the skill pushes to the default branch with no PR | The factory host moves the files into a docs branch, and a person opens the PR |
+| Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted`. Under `direct`, none | The same, after the run |
 
 When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/tree-format.md#pointer) beside it can be. `--out <dir>` overrides the folder.
 
-When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR, apart from the code.
+When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR or commit, apart from the code.
 
-The personal factory can use `merge: proposed` for speed. A team whose changes need review before they take effect uses `merge: review`.
+The personal factory can use `changes: proposed` or `direct` for speed. A team whose changes need review before they take effect uses `changes: review`.
 
 ## Read path
 
-Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out unless asked for. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
+Other sessions see a record once it reaches the default branch and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out unless asked for. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
 
 Each decision takes one line in `context`: its ID, status and title, and the first sentence of its **Why.** paragraph. When a record supersedes another, its line ends with the older record's ID and title, as `Supersedes dc-1a7f3b4: <title>`. The tool reads these from the older file, so nothing is stored twice. Only the immediate predecessor appears, and `mfd show <dc-id>` prints a record in full with the chain it supersedes. Each node's decisions go into the budget right after the node, newest first, so trimming drops the oldest decisions of the farthest ancestors first. A record's length doesn't change its cost in context, so a node can gather many decisions without crowding out its spec.
 

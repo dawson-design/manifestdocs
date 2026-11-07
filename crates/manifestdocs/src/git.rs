@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use manifestdocs_core::context::DocsVersion;
+use manifestdocs_core::context::{Changes, DocsVersion};
 
-/// The version of the working tree at `tree_root`. `uncommitted` covers the tree's folder and
+/// The version of the working tree at `tree_root`. `changes` covers the tree's folder and
 /// `docs`, the files outside it that the context loads. Without git, or without a commit,
 /// it's `NotInGit`, so a tree still gets its context.
 pub fn version(tree_root: &Path, docs: &[PathBuf]) -> DocsVersion {
@@ -16,15 +16,6 @@ pub fn version(tree_root: &Path, docs: &[PathBuf]) -> DocsVersion {
         return DocsVersion::NotInGit;
     };
     let branch = git(tree_root, &["symbolic-ref", "--quiet", "--short", "HEAD"]);
-    let mut status = vec![
-        "status".into(),
-        "--porcelain".into(),
-        "--".into(),
-        ".".into(),
-    ];
-    status.extend(docs.iter().map(|doc| doc.display().to_string()));
-    let status: Vec<&str> = status.iter().map(String::as_str).collect();
-    let changes = git(tree_root, &status);
     let origin_head = git(
         tree_root,
         &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
@@ -33,9 +24,27 @@ pub fn version(tree_root: &Path, docs: &[PathBuf]) -> DocsVersion {
         branch,
         commit: commit.to_owned(),
         date: date.to_owned(),
-        uncommitted: changes.is_some_and(|changes| !changes.is_empty()),
+        changes: changes(tree_root, docs),
         default_branch: origin_head
             .and_then(|head| head.strip_prefix("origin/").map(str::to_owned)),
+    }
+}
+
+/// Whether `git status` lists changes in the tree's folder or `docs`. A failed status is
+/// `Unknown`, so the header never claims clean docs it couldn't check.
+fn changes(tree_root: &Path, docs: &[PathBuf]) -> Changes {
+    let mut status = vec![
+        "status".into(),
+        "--porcelain".into(),
+        "--".into(),
+        ".".into(),
+    ];
+    status.extend(docs.iter().map(|doc| doc.display().to_string()));
+    let status: Vec<&str> = status.iter().map(String::as_str).collect();
+    match git(tree_root, &status) {
+        None => Changes::Unknown,
+        Some(changes) if changes.is_empty() => Changes::Clean,
+        Some(_) => Changes::Uncommitted,
     }
 }
 

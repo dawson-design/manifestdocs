@@ -10,10 +10,9 @@ use crate::paths::TreePath;
 use crate::refs::{IssueRef, RepoRef};
 use crate::yaml;
 
+/// A node's fields. Its ID and location are kept beside it, in `ParsedNode` and `Entry`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
-    pub id: NodeId,
-    pub location: NodeLocation,
     pub title: NonEmptyString,
     pub status: NodeStatus,
     pub summary: NonEmptyString,
@@ -54,15 +53,48 @@ pub struct NonEmptyString(String);
 pub struct ParsedNode {
     pub file: TreePath,
     pub location: NodeLocation,
-    /// Set whenever the `id` parses, even if another field doesn't, so references to it resolve.
-    pub id: Option<NodeId>,
-    pub node: Option<Node>,
+    pub reading: Reading,
     pub findings: Vec<Finding>,
     /// The frontmatter's top-level keys, so tree-wide problems can point at a field's line.
     pub keys: Vec<Key>,
 }
 
+/// How much of a node file's frontmatter reads as a node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Reading {
+    /// No `id` parses, so the file isn't a node.
+    NoId,
+    /// The `id` parses but another required field doesn't. The ID still counts, so references
+    /// to the node resolve.
+    IdOnly(NodeId),
+    Node(NodeId, Node),
+}
+
+impl Reading {
+    fn new(id: Option<NodeId>, node: Option<Node>) -> Self {
+        match (id, node) {
+            (Some(id), Some(node)) => Self::Node(id, node),
+            (Some(id), None) => Self::IdOnly(id),
+            (None, _) => Self::NoId,
+        }
+    }
+}
+
 impl ParsedNode {
+    pub fn id(&self) -> Option<&NodeId> {
+        match &self.reading {
+            Reading::NoId => None,
+            Reading::IdOnly(id) | Reading::Node(id, _) => Some(id),
+        }
+    }
+
+    pub fn node(&self) -> Option<&Node> {
+        match &self.reading {
+            Reading::Node(_, node) => Some(node),
+            Reading::NoId | Reading::IdOnly(_) => None,
+        }
+    }
+
     /// The line of `field`'s key, or the opening `---` when the field is absent.
     pub fn line_of(&self, field: Field) -> u32 {
         let key = self.keys.iter().find(|key| key.name == field.name());
@@ -98,7 +130,7 @@ pub fn read_node_file(
             let problem = Problem::UnparsableFrontmatter("no closing `---` line".into());
             let rejected = rejected(file, location, problem);
             Some(ParsedNode {
-                id: scanned_id(&keys),
+                reading: Reading::new(scanned_id(&keys), None),
                 keys,
                 ..rejected
             })
@@ -127,8 +159,7 @@ fn rejected(file: &TreePath, location: NodeLocation, problem: Problem) -> Parsed
     ParsedNode {
         file: file.clone(),
         location,
-        id: None,
-        node: None,
+        reading: Reading::NoId,
         findings: vec![finding],
         keys: Vec::new(),
     }
@@ -145,21 +176,20 @@ fn parse_node(
         frontmatter,
         findings: Vec::new(),
     };
-    let (id, node) = match frontmatter::values(frontmatter.yaml) {
+    let reading = match frontmatter::values(frontmatter.yaml) {
         Ok(values) if !values.contains_key(Field::Id.name()) => {
             return rejected(file, location, Problem::NodeFileWithoutId);
         }
-        Ok(values) => reader.fields(&values, location.clone(), config),
+        Ok(values) => reader.fields(&values, config),
         Err(error) => {
             reader.unparsable(&error);
-            (scanned_id(&frontmatter.keys), None)
+            Reading::new(scanned_id(&frontmatter.keys), None)
         }
     };
     ParsedNode {
         file: file.clone(),
         location,
-        id,
-        node,
+        reading,
         findings: reader.findings,
         keys: frontmatter.keys.clone(),
     }
@@ -174,6 +204,13 @@ fn scanned_id(keys: &[Key]) -> Option<NodeId> {
 
 fn value(values: &BTreeMap<String, Value>, field: Field) -> Option<&Value> {
     values.get(field.name())
+}
+
+/// An optional text field's value, once its type is checked.
+enum OptionalText {
+    Absent,
+    Text(String),
+    WrongType,
 }
 
 /// Collects every problem in one node file's frontmatter.
@@ -205,12 +242,7 @@ impl Reader<'_> {
         self.check_quoting(Field::Summary);
     }
 
-    fn fields(
-        &mut self,
-        values: &BTreeMap<String, Value>,
-        location: NodeLocation,
-        config: &TreeConfig,
-    ) -> (Option<NodeId>, Option<Node>) {
+    fn fields(&mut self, values: &BTreeMap<String, Value>, config: &TreeConfig) -> Reading {
         for name in values
             .keys()
             .filter(|name| Field::from_name(name).is_none())
@@ -222,20 +254,19 @@ impl Reader<'_> {
             self.report(line, Problem::UnknownField(name.clone()));
         }
         let id = self.id(value(values, Field::Id));
-        let node = self.node(values, id.clone(), location, config);
-        (id, node)
+        let node = self.node(values, id.as_ref(), config);
+        Reading::new(id, node)
     }
 
     fn node(
         &mut self,
         values: &BTreeMap<String, Value>,
-        id: Option<NodeId>,
-        location: NodeLocation,
+        id: Option<&NodeId>,
         config: &TreeConfig,
     ) -> Option<Node> {
         let title = self.quoted_text(Field::Title, values);
         let summary = self.quoted_text(Field::Summary, values);
-        let status = self.status(values, id.as_ref(), config);
+        let status = self.status(values, id, config);
         let repos = value(values, Field::Repos);
         let repos = self.list(
             Field::Repos,
@@ -251,8 +282,6 @@ impl Reader<'_> {
             Problem::MalformedIssueRef,
         );
         Some(Node {
-            id: id?,
-            location,
             title: title?,
             status: status?,
             summary: summary?,
@@ -301,24 +330,20 @@ impl Reader<'_> {
             },
             None => Problem::MissingField(field),
             Some(Value::Null) => Problem::EmptyField(field),
-            Some(Value::List(_) | Value::Other) => Problem::WrongType {
-                field,
-                expected: field.expected(),
-            },
+            Some(Value::List(_) | Value::Other) => Problem::WrongType(field),
         };
         self.report_field(field, problem);
         None
     }
 
-    /// `Err` when the value has the wrong type, which is reported.
-    fn optional_text(&mut self, field: Field, value: Option<&Value>) -> Result<Option<String>, ()> {
+    /// A wrong type is reported.
+    fn optional_text(&mut self, field: Field, value: Option<&Value>) -> OptionalText {
         match value {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::Text(text)) => Ok(Some(text.clone())),
+            None | Some(Value::Null) => OptionalText::Absent,
+            Some(Value::Text(text)) => OptionalText::Text(text.clone()),
             Some(Value::List(_) | Value::Other) => {
-                let expected = field.expected();
-                self.report_field(field, Problem::WrongType { field, expected });
-                Err(())
+                self.report_field(field, Problem::WrongType(field));
+                OptionalText::WrongType
             }
         }
     }
@@ -334,8 +359,7 @@ impl Reader<'_> {
             None | Some(Value::Null) => return Vec::new(),
             Some(Value::List(items)) => items,
             Some(Value::Text(_) | Value::Other) => {
-                let expected = field.expected();
-                self.report_field(field, Problem::WrongType { field, expected });
+                self.report_field(field, Problem::WrongType(field));
                 return Vec::new();
             }
         };
@@ -358,7 +382,12 @@ impl Reader<'_> {
         let status = self.text(Field::Status, value(values, Field::Status));
         let superseded_by = value(values, Field::SupersededBy);
         let superseded_by = self.optional_text(Field::SupersededBy, superseded_by);
-        let (status, superseded_by) = (status?, superseded_by.ok()?);
+        let status = status?;
+        let superseded_by = match superseded_by {
+            OptionalText::Absent => None,
+            OptionalText::Text(text) => Some(text),
+            OptionalText::WrongType => return None,
+        };
         if status.as_str() == SUPERSEDED {
             return self.replacement(superseded_by, id);
         }

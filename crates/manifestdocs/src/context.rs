@@ -17,7 +17,7 @@ use crate::show::{Paths, problems, select_node};
 pub fn run(arg: &str, budget: Option<u32>) -> Result<ExitCode> {
     let cwd = env::current_dir().context("can't read the current folder")?;
     let roots = locate(&cwd)?;
-    let (tree, mut snapshot) = files::tree_and_snapshot(&roots, &cwd)?;
+    let (tree, snapshot) = files::tree_and_snapshot(&roots, &cwd)?;
     let paths = Paths {
         tree_root: &roots.tree_root,
         cwd: &cwd,
@@ -28,7 +28,7 @@ pub fn run(arg: &str, budget: Option<u32>) -> Result<ExitCode> {
         return Ok(ExitCode::from(1));
     }
     let docs = docs_to_read(&tree, &snapshot, entry);
-    files::read_linked_docs(&mut snapshot, &docs, &roots);
+    let linked = files::read_linked_docs(&docs, &roots);
     let doc_files: Vec<PathBuf> = docs
         .iter()
         .map(|doc| roots.repo_root.join(doc.as_str()))
@@ -38,6 +38,7 @@ pub fn run(arg: &str, budget: Option<u32>) -> Result<ExitCode> {
         tree: &tree,
         snapshot: &snapshot,
         entry,
+        docs: &linked,
         version: &git::version(&roots.tree_root, &doc_files),
         budget: budget.and_then(Budget::new),
         shown: &shown,

@@ -1,11 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A throwaway repo in the temp folder, removed when dropped.
 pub struct Fixture {
     root: PathBuf,
 }
+
+// Tests run on threads in one process, so the process ID alone doesn't keep their folders apart.
+static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Run {
     pub code: i32,
@@ -16,7 +20,8 @@ pub struct Run {
 impl Fixture {
     /// Writes `files` under a new folder with an empty `.git` folder, so the folder reads as a repo root.
     pub fn new(name: &str, files: &[(&str, &str)]) -> Self {
-        let root = std::env::temp_dir().join(format!("mfd-{name}-{}", std::process::id()));
+        let n = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("mfd-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join(".git")).expect("create the fixture");
         for (path, text) in files {

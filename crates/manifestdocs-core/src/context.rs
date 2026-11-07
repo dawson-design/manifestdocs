@@ -1,12 +1,15 @@
 //! Agent context: a node and its ancestors in full, the docs it links to and its children,
 //! trimmed to an approximate token budget.
 
-use crate::check::Snapshot;
+use std::collections::BTreeMap;
+use std::iter;
+
 use crate::frontmatter;
-use crate::link::{LinkTarget, resolve};
+use crate::link::{LinkTarget, RepoFiles, resolve};
 use crate::markdown::outline;
 use crate::node::NodeLocation;
 use crate::paths::{RepoPath, TreePath};
+use crate::snapshot::Snapshot;
 use crate::tokens::{estimate, grouped};
 use crate::tree::{Entry, Tree};
 
@@ -23,10 +26,19 @@ pub enum DocsVersion {
         /// The commit's date, as `YYYY-MM-DD`.
         date: String,
         /// Whether the tree or a loaded doc has uncommitted or untracked changes.
-        uncommitted: bool,
+        changes: Changes,
         /// The branch `origin/HEAD` names, when it's set.
         default_branch: Option<String>,
     },
+}
+
+/// Whether the docs have changes that aren't committed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Changes {
+    Clean,
+    Uncommitted,
+    /// Git couldn't report the working tree's status.
+    Unknown,
 }
 
 /// An approximate token budget for the whole context, at least 1.
@@ -40,7 +52,7 @@ impl Budget {
 
     /// The characters that fit: 3 a token, less 10% headroom for tokenizers that need more.
     fn characters(self) -> usize {
-        usize::try_from(self.0).unwrap_or(usize::MAX) / 10 * 9 * 3
+        usize::try_from(u64::from(self.0) * 27 / 10).unwrap_or(usize::MAX)
     }
 }
 
@@ -63,54 +75,79 @@ pub enum Listed {
     Url(String),
 }
 
-/// The Markdown `context` needs beyond the node files: the docs the target links to.
-pub fn docs_to_read(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Vec<RepoPath> {
-    let docs = links(tree, snapshot, entry).docs.into_iter();
-    docs.filter(|doc| !snapshot.markdown.contains_key(doc))
-        .collect()
+/// A doc the target links to, as the I/O side read it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkedDoc {
+    Text(String),
+    /// It couldn't be read, such as one that isn't UTF-8, so it's listed with the other links.
+    Unreadable,
 }
 
-/// The target's links. Links to the target or an ancestor are left out, since they're in
-/// full, and so are broken links, which `check` reports.
-pub fn links(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Links {
-    let full: Vec<TreePath> = in_full(tree, entry)
-        .iter()
-        .map(|e| e.file.clone())
-        .collect();
-    let mut links = Links::default();
-    let file = snapshot.tree_root.join(entry.file.as_str());
-    for target in file.iter().flat_map(|file| body_links(snapshot, file)) {
-        add_link(&mut links, tree, snapshot, &full, target);
-    }
+/// The Markdown `context` needs beyond the node files: the docs the target links to.
+pub fn docs_to_read(tree: &Tree, snapshot: &Snapshot, entry: &Entry) -> Vec<RepoPath> {
+    let repo = RepoFiles::new(&snapshot.paths);
+    target_links(tree, snapshot, &repo, entry).docs
+}
+
+/// The target's links, and the links inside the docs it loads. Links to the target or an
+/// ancestor are left out, since they're in full, and so are broken links, which `check`
+/// reports.
+fn links(request: &Request) -> Links {
+    let Request {
+        tree,
+        snapshot,
+        entry,
+        docs,
+        ..
+    } = request;
+    let repo = RepoFiles::new(&snapshot.paths);
+    let mut links = target_links(tree, snapshot, &repo, entry);
     let children = tree.children(&entry.file).into_iter();
-    let mut shown = full;
+    let mut shown = in_full_files(tree, entry);
     shown.extend(links.nodes.iter().cloned());
     shown.extend(children.map(|child| child.file.clone()));
     for doc in links.docs.clone() {
-        for target in body_links(snapshot, &doc) {
+        let Some(LinkedDoc::Text(text)) = docs.get(&doc) else {
+            continue;
+        };
+        for target in body_links(text, &doc) {
             if !shown_elsewhere(tree, snapshot, &links, &shown, &target) {
-                push_new(&mut links.listed, listed(snapshot, target));
+                push_new(&mut links.listed, listed(&repo, target));
             }
         }
     }
     links
 }
 
+/// The links in the target's own body.
+fn target_links(tree: &Tree, snapshot: &Snapshot, repo: &RepoFiles, entry: &Entry) -> Links {
+    let full = in_full_files(tree, entry);
+    let mut links = Links::default();
+    let Some(file) = snapshot.tree_root.join(entry.file.as_str()) else {
+        return links;
+    };
+    let text = snapshot.markdown.get(&file).map_or("", String::as_str);
+    for target in body_links(text, &file) {
+        add_link(&mut links, tree, snapshot, repo, &full, target);
+    }
+    links
+}
+
+fn in_full_files(tree: &Tree, entry: &Entry) -> Vec<TreePath> {
+    let full = in_full(tree, entry).into_iter();
+    full.map(|entry| entry.file.clone()).collect()
+}
+
 /// The target, then its ancestors from the parent up to the root node.
 fn in_full<'a>(tree: &'a Tree, entry: &'a Entry) -> Vec<&'a Entry> {
-    let mut nodes = vec![entry];
-    let mut next = tree.parent(&entry.file);
-    while let Some(parent) = next {
-        nodes.push(parent);
-        next = tree.parent(&parent.file);
-    }
-    nodes
+    iter::successors(Some(entry), |entry| tree.parent(&entry.file)).collect()
 }
 
 fn add_link(
     links: &mut Links,
     tree: &Tree,
     snapshot: &Snapshot,
+    repo: &RepoFiles,
     full: &[TreePath],
     target: LinkTarget,
 ) {
@@ -124,7 +161,7 @@ fn add_link(
             return;
         }
     }
-    push_new(&mut links.listed, listed(snapshot, target));
+    push_new(&mut links.listed, listed(repo, target));
 }
 
 // A link inside a loaded doc to a node or doc that's already in the context isn't listed.
@@ -158,23 +195,15 @@ fn node_at(tree: &Tree, snapshot: &Snapshot, path: &RepoPath) -> Option<TreePath
 }
 
 // A local link that names nothing is broken, and `check` reports it.
-fn listed(snapshot: &Snapshot, target: LinkTarget) -> Option<Listed> {
+fn listed(repo: &RepoFiles, target: LinkTarget) -> Option<Listed> {
     match target {
         LinkTarget::External(url) => Some(Listed::Url(url)),
-        LinkTarget::Local { path, .. } => exists(snapshot, &path).then_some(Listed::Path(path)),
+        LinkTarget::Local { path, .. } => repo.exists(&path).then_some(Listed::Path(path)),
     }
 }
 
-fn exists(snapshot: &Snapshot, path: &RepoPath) -> bool {
-    let folder = format!("{}/", path.as_str());
-    let mut paths = snapshot.paths.iter();
-    snapshot.paths.contains(path) || paths.any(|p| p.as_str().starts_with(&folder))
-}
-
-fn body_links(snapshot: &Snapshot, file: &RepoPath) -> Vec<LinkTarget> {
-    let Some(text) = snapshot.markdown.get(file) else {
-        return Vec::new();
-    };
+/// The links in the body of `text`, the Markdown file `file`.
+fn body_links(text: &str, file: &RepoPath) -> Vec<LinkTarget> {
     let (body, first_line) = frontmatter::body(text);
     let links = outline(body, first_line).links.into_iter();
     links
@@ -187,6 +216,8 @@ pub struct Request<'a> {
     pub tree: &'a Tree,
     pub snapshot: &'a Snapshot,
     pub entry: &'a Entry,
+    /// Each doc that `docs_to_read` named, as it was read.
+    pub docs: &'a BTreeMap<RepoPath, LinkedDoc>,
     pub version: &'a DocsVersion,
     pub budget: Option<Budget>,
     /// How output names a repo path, such as relative to the current folder.
@@ -220,6 +251,11 @@ impl Section {
             Section::Around => "\n## Around this feature\n\n",
         }
     }
+
+    // An other link is only a path, which the list of what's left out would repeat.
+    fn trimmable(self) -> bool {
+        self != Section::OtherLinks
+    }
 }
 
 pub fn context(request: &Request) -> String {
@@ -240,12 +276,13 @@ fn first_fit(head: &str, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
     let mut opened: Vec<Section> = Vec::new();
     let mut keep = Vec::new();
     for piece in pieces {
-        let heading = match opened.contains(&piece.section) {
-            true => 0,
-            false => chars(piece.section.heading()),
+        let heading = if opened.contains(&piece.section) {
+            0
+        } else {
+            chars(piece.section.heading())
         };
         let added = heading + chars(&piece.text);
-        let fits = limit.is_none_or(|limit| size + added <= limit);
+        let fits = !piece.section.trimmable() || limit.is_none_or(|limit| size + added <= limit);
         if fits {
             size += added;
             opened.push(piece.section);
@@ -257,7 +294,8 @@ fn first_fit(head: &str, pieces: &[Piece], limit: Option<usize>) -> Vec<bool> {
 
 /// The list of what's left out counts against the budget too. While the output is over the
 /// limit, this leaves out one more kept piece: the last one whose removal makes the output
-/// smaller. A short link can cost more in the list than kept, so it's passed over.
+/// smaller. Other links are never left out, and a short piece can cost more in the list than
+/// kept, so it's passed over.
 fn smaller(
     head: &str,
     pieces: &[Piece],
@@ -269,8 +307,13 @@ fn smaller(
     if size <= limit? {
         return None;
     }
-    let kept = keep.iter().enumerate().filter(|(_, kept)| **kept);
-    let candidates = kept.map(|(i, _)| i).collect::<Vec<_>>().into_iter().rev();
+    let kept = pieces.iter().zip(keep).enumerate();
+    let trimmable = kept.filter(|(_, (piece, kept))| **kept && piece.section.trimmable());
+    let candidates = trimmable
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev();
     candidates
         .map(|i| {
             let mut fewer = keep.to_vec();
@@ -312,15 +355,16 @@ fn header(entry: &Entry, version: &DocsVersion) -> String {
         branch,
         commit,
         date,
-        uncommitted,
+        changes,
         default_branch,
     } = version
     else {
         return format!("# Context: {} (docs not in git)\n", entry.id);
     };
-    let changes = match uncommitted {
-        true => ", uncommitted changes",
-        false => "",
+    let changes = match changes {
+        Changes::Clean => "",
+        Changes::Uncommitted => ", uncommitted changes",
+        Changes::Unknown => ", uncommitted changes unknown",
     };
     let on = branch.as_deref().unwrap_or("detached HEAD");
     let mut out = format!(
@@ -370,12 +414,8 @@ fn body<'a>(request: &'a Request, entry: &'a Entry) -> &'a str {
     if let Ok(node) = &entry.node {
         return &node.body;
     }
-    let file = request.snapshot.tree_root.join(entry.file.as_str());
-    let text = file.and_then(|file| request.snapshot.markdown.get(&file));
-    match text.map(|text| frontmatter::split(text)) {
-        Some(frontmatter::Split::Present(frontmatter)) => frontmatter.body,
-        _ => text.map_or("", String::as_str),
-    }
+    let text = request.snapshot.tree_markdown(&entry.file);
+    text.map_or("", |text| frontmatter::body(text).0)
 }
 
 fn push_body(out: &mut String, body: &str) {
@@ -389,12 +429,9 @@ fn push_body(out: &mut String, body: &str) {
 // other links, then the children. A linked node that's also a child appears once, as a child.
 fn pieces(request: &Request) -> Vec<Piece> {
     let Request {
-        tree,
-        snapshot,
-        entry,
-        ..
+        tree, entry, docs, ..
     } = request;
-    let links = links(tree, snapshot, entry);
+    let links = links(request);
     let children = tree.children(&entry.file);
     let is_child = |file: &&TreePath| children.iter().any(|child| child.file == **file);
     let ancestors = in_full(tree, entry).into_iter().skip(1).enumerate();
@@ -406,7 +443,7 @@ fn pieces(request: &Request) -> Vec<Piece> {
     let (readable, unreadable): (Vec<&RepoPath>, Vec<&RepoPath>) = links
         .docs
         .iter()
-        .partition(|doc| snapshot.markdown.contains_key(*doc));
+        .partition(|doc| matches!(docs.get(*doc), Some(LinkedDoc::Text(_))));
     pieces.extend(
         readable
             .into_iter()
@@ -447,7 +484,9 @@ fn ancestor_piece(request: &Request, ancestor: &Entry, is_parent: bool) -> Piece
 }
 
 fn linked_doc(request: &Request, doc: &RepoPath) -> Option<Piece> {
-    let text = request.snapshot.markdown.get(doc)?;
+    let Some(LinkedDoc::Text(text)) = request.docs.get(doc) else {
+        return None;
+    };
     let name = (request.shown)(doc);
     Some(Piece {
         section: Section::LinkedDocs,
@@ -499,5 +538,14 @@ mod tests {
     fn needs_a_budget_of_at_least_one_token() {
         assert_eq!(Budget::new(0), None);
         assert!(Budget::new(1).is_some());
+    }
+
+    #[test]
+    fn fits_nine_tenths_of_three_characters_a_token() {
+        let characters = |tokens| Budget::new(tokens).unwrap().characters();
+
+        assert_eq!(characters(9), 24);
+        assert_eq!(characters(19), 51);
+        assert_eq!(characters(1_000), 2_700);
     }
 }

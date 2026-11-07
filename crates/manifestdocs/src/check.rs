@@ -47,10 +47,10 @@ pub fn run(path: Option<&str>, strict: bool) -> Result<ExitCode> {
 fn start_folder(path: &str, cwd: &Path) -> Result<PathBuf> {
     let path =
         fs::canonicalize(cwd.join(path)).map_err(|_| anyhow!("no file or folder `{path}`"))?;
-    match path.is_dir() {
-        true => Ok(path),
-        false => Ok(path.parent().map_or(path.clone(), Path::to_path_buf)),
+    if path.is_dir() {
+        return Ok(path);
     }
+    Ok(path.parent().map_or(path.clone(), Path::to_path_buf))
 }
 
 // A pointer can lead to a tree that doesn't contain a file, such as a code repo's README. A

@@ -38,10 +38,7 @@ pub enum Problem {
     MissingField(Field),
     EmptyField(Field),
     UnquotedField(Field),
-    WrongType {
-        field: Field,
-        expected: &'static str,
-    },
+    WrongType(Field),
     MalformedId(String),
     MalformedRepoRef(String),
     MalformedIssueRef(String),
@@ -85,7 +82,7 @@ impl Problem {
             | Self::MissingField(_)
             | Self::EmptyField(_)
             | Self::UnquotedField(_)
-            | Self::WrongType { .. }
+            | Self::WrongType(_)
             | Self::MalformedId(_)
             | Self::MalformedRepoRef(_)
             | Self::MalformedIssueRef(_)
@@ -156,8 +153,8 @@ impl fmt::Display for Problem {
             Self::MissingField(field) => write!(f, "missing `{}`", field.name()),
             Self::EmptyField(field) => write!(f, "`{}` is empty", field.name()),
             Self::UnquotedField(field) => write!(f, "`{}` must be double-quoted", field.name()),
-            Self::WrongType { field, expected } => {
-                write!(f, "`{}` must be {expected}", field.name())
+            Self::WrongType(field) => {
+                write!(f, "`{}` must be {}", field.name(), field.expected())
             }
             Self::MalformedId(text) => {
                 write!(

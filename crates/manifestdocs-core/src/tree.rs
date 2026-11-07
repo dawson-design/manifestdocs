@@ -1,14 +1,15 @@
 //! A tree: its config and the nodes found under its root, and the rules across nodes.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter;
 
-use crate::check::{Snapshot, read_node};
 use crate::config::{self, TreeConfig};
-use crate::finding::{Field, Finding, Problem, Severity};
+use crate::finding::{Finding, Severity};
 use crate::id::{NodeId, NodeIdPrefix};
 use crate::layout::layout;
-use crate::node::{Node, NodeLocation, NodeStatus, ParsedNode};
+use crate::node::{Node, NodeLocation, NodeStatus, ParsedNode, Reading};
 use crate::paths::{RepoPath, TreePath};
+use crate::snapshot::Snapshot;
 
 /// How a command names one node: by ID or prefix, or by its node file or folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,7 +71,7 @@ pub fn read_tree(config: &TreeConfig, snapshot: &Snapshot) -> Tree {
     let entries: BTreeMap<TreePath, Entry> = layout
         .node_files
         .iter()
-        .filter_map(|file| entry(read_node(config, snapshot, file)?))
+        .filter_map(|file| entry(snapshot.read_node(config, file)?))
         .map(|entry| (entry.file.clone(), entry))
         .collect();
     let folders: BTreeMap<TreePath, TreePath> = entries
@@ -84,7 +85,7 @@ pub fn read_tree(config: &TreeConfig, snapshot: &Snapshot) -> Tree {
             Some((entry.file.clone(), parent))
         })
         .collect();
-    let config_file = TreePath::new(config::FILE_NAME).unwrap_or_default();
+    let config_file = config::file_path();
     let owners = layout
         .files
         .into_iter()
@@ -104,13 +105,17 @@ pub fn read_tree(config: &TreeConfig, snapshot: &Snapshot) -> Tree {
 }
 
 fn entry(parsed: ParsedNode) -> Option<Entry> {
-    let id = parsed.id?;
+    let (id, node) = match parsed.reading {
+        Reading::NoId => return None,
+        Reading::IdOnly(id) => (id, None),
+        Reading::Node(id, node) => (id, Some(node)),
+    };
     let errors: Vec<Finding> = parsed
         .findings
         .into_iter()
         .filter(|finding| finding.problem.severity() == Severity::Error)
         .collect();
-    let node = match parsed.node {
+    let node = match node {
         Some(node) if errors.is_empty() => Ok(node),
         _ => Err(errors),
     };
@@ -124,14 +129,8 @@ fn entry(parsed: ParsedNode) -> Option<Entry> {
 
 /// The node file of the nearest node at or above `folder`.
 fn nearest_node(folders: &BTreeMap<TreePath, TreePath>, folder: TreePath) -> Option<TreePath> {
-    let mut folder = Some(folder);
-    while let Some(current) = folder {
-        if let Some(file) = folders.get(&current) {
-            return Some(file.clone());
-        }
-        folder = current.parent();
-    }
-    None
+    let mut up = iter::successors(Some(folder), TreePath::parent);
+    up.find_map(|folder| folders.get(&folder).cloned())
 }
 
 impl Tree {
@@ -269,61 +268,4 @@ fn sorted<'a>(entries: impl Iterator<Item = &'a Entry>) -> Vec<&'a Entry> {
             .collect::<Vec<_>>()
     });
     entries
-}
-
-/// Duplicate IDs, and replacements that name no node in the tree.
-pub fn tree_findings(nodes: &[ParsedNode]) -> Vec<Finding> {
-    let index = id_index(nodes);
-    let mut findings = duplicate_ids(&index);
-    findings.extend(missing_replacements(nodes, &index));
-    findings
-}
-
-// Every node file whose ID parses, valid or not, so one bad field doesn't hide a node.
-fn id_index(nodes: &[ParsedNode]) -> BTreeMap<&NodeId, Vec<&ParsedNode>> {
-    let mut index: BTreeMap<&NodeId, Vec<&ParsedNode>> = BTreeMap::new();
-    for node in nodes {
-        if let Some(id) = &node.id {
-            index.entry(id).or_default().push(node);
-        }
-    }
-    index
-}
-
-// Each file that shares an ID names another file that uses it.
-fn duplicate_ids(index: &BTreeMap<&NodeId, Vec<&ParsedNode>>) -> Vec<Finding> {
-    let shared = index.values().filter(|files| files.len() > 1);
-    shared
-        .flat_map(|files| {
-            files.iter().map(|node| {
-                let other = files.iter().find(|other| other.file != node.file);
-                let also_in = other.map(|other| other.file.clone()).unwrap_or_default();
-                finding(node, Field::Id, Problem::DuplicateId { also_in })
-            })
-        })
-        .collect()
-}
-
-fn missing_replacements(
-    nodes: &[ParsedNode],
-    index: &BTreeMap<&NodeId, Vec<&ParsedNode>>,
-) -> Vec<Finding> {
-    nodes
-        .iter()
-        .filter_map(|parsed| match &parsed.node.as_ref()?.status {
-            NodeStatus::Superseded { by } if !index.contains_key(by) => {
-                let problem = Problem::ReplacementNotFound(by.clone());
-                Some(finding(parsed, Field::SupersededBy, problem))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-fn finding(node: &ParsedNode, field: Field, problem: Problem) -> Finding {
-    Finding {
-        file: node.file.clone(),
-        line: Some(node.line_of(field)),
-        problem,
-    }
 }

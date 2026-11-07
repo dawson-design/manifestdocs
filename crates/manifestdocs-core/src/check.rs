@@ -5,24 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::config::{self, TreeConfig};
 use crate::finding::{Field, Finding, Problem, Severity};
 use crate::frontmatter::{self, Split};
-use crate::layout::{Layout, NodeFile, layout};
+use crate::id::NodeId;
+use crate::layout::{Layout, layout};
 use crate::link::{LinkTarget, Targets, resolve};
 use crate::markdown::{Link, outline};
-use crate::node::{NodeLocation, ParsedNode, declared_id, read_node_file};
+use crate::node::{NodeLocation, NodeStatus, ParsedNode, declared_id};
 use crate::paths::{RepoPath, TreePath};
+use crate::snapshot::Snapshot;
 use crate::tokens::estimate;
-use crate::tree::tree_findings;
-
-/// The files the I/O side reads for the pure core.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Snapshot {
-    /// The tree's root folder. Empty when the tree is the repo root.
-    pub tree_root: RepoPath,
-    /// Every file in the repo that git doesn't ignore.
-    pub paths: BTreeSet<RepoPath>,
-    /// Every Markdown file under the tree root, plus Markdown outside it that links point into.
-    pub markdown: BTreeMap<RepoPath, String>,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Report {
@@ -57,7 +47,7 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     let nodes: Vec<ParsedNode> = layout
         .node_files
         .iter()
-        .filter_map(|file| read_node(config, snapshot, file))
+        .filter_map(|file| snapshot.read_node(config, file))
         .collect();
     let mut findings = layout_findings(config, &layout, &nodes);
     findings.extend(nodes.iter().flat_map(|node| node.findings.iter().cloned()));
@@ -67,23 +57,9 @@ pub fn check(config: &TreeConfig, snapshot: &Snapshot) -> Report {
     findings.extend(broken_links(snapshot, &layout));
     findings.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
     Report {
-        nodes: nodes.iter().filter(|node| node.id.is_some()).count(),
+        nodes: nodes.iter().filter(|node| node.id().is_some()).count(),
         findings,
     }
-}
-
-pub(crate) fn read_node(
-    config: &TreeConfig,
-    snapshot: &Snapshot,
-    file: &NodeFile,
-) -> Option<ParsedNode> {
-    let text = markdown(snapshot, &file.path)?;
-    read_node_file(&file.path, file.location.clone(), text, config)
-}
-
-fn markdown<'a>(snapshot: &'a Snapshot, file: &TreePath) -> Option<&'a str> {
-    let path = snapshot.tree_root.join(file.as_str())?;
-    snapshot.markdown.get(&path).map(String::as_str)
 }
 
 /// Markdown outside the files `markdown_to_read` names that links point into with an anchor.
@@ -165,7 +141,7 @@ fn shown_path(written: &str, file: &TreePath) -> String {
 /// The links in `file`'s body, each with what it resolves to.
 fn resolved_links(snapshot: &Snapshot, file: &TreePath) -> Vec<(Link, Option<LinkTarget>)> {
     let (Some(text), Some(from)) = (
-        markdown(snapshot, file),
+        snapshot.tree_markdown(file),
         snapshot.tree_root.join(file.as_str()),
     ) else {
         return Vec::new();
@@ -186,7 +162,7 @@ fn oversized_nodes(config: &TreeConfig, snapshot: &Snapshot, nodes: &[ParsedNode
     let limit = config.node_tokens.get();
     let folders: Vec<TreePath> = nodes
         .iter()
-        .filter(|node| node.id.is_some())
+        .filter(|node| node.id().is_some())
         .map(|node| node.location.folder())
         .collect();
     let has_children = |node: &&ParsedNode| {
@@ -195,10 +171,10 @@ fn oversized_nodes(config: &TreeConfig, snapshot: &Snapshot, nodes: &[ParsedNode
     };
     nodes
         .iter()
-        .filter(|node| node.id.is_some())
+        .filter(|node| node.id().is_some())
         .filter(has_children)
         .filter_map(|node| {
-            let (body, _) = frontmatter::body(markdown(snapshot, &node.file)?);
+            let (body, _) = frontmatter::body(snapshot.tree_markdown(&node.file)?);
             let tokens = estimate(body.trim());
             (tokens > limit).then(|| Finding {
                 file: node.file.clone(),
@@ -218,7 +194,8 @@ fn stray_node_ids(snapshot: &Snapshot, layout: &Layout) -> Vec<Finding> {
         .filter(|file| !node_files.contains(file));
     others
         .filter_map(|file| {
-            let Split::Present(frontmatter) = frontmatter::split(markdown(snapshot, file)?) else {
+            let Split::Present(frontmatter) = frontmatter::split(snapshot.tree_markdown(file)?)
+            else {
                 return None;
             };
             let id = declared_id(&frontmatter)?;
@@ -240,13 +217,70 @@ fn layout_findings(config: &TreeConfig, layout: &Layout, nodes: &[ParsedNode]) -
     });
     let has_root = nodes
         .iter()
-        .any(|node| node.location == NodeLocation::Root && node.id.is_some());
+        .any(|node| node.location == NodeLocation::Root && node.id().is_some());
     let no_root = (!has_root).then(|| Finding {
-        file: TreePath::new(config::FILE_NAME).unwrap_or_default(),
+        file: config::file_path(),
         line: None,
         problem: Problem::NoRootNode {
             expected: config.root_node_file(),
         },
     });
     nested.chain(no_root).collect()
+}
+
+/// Duplicate IDs, and replacements that name no node in the tree.
+fn tree_findings(nodes: &[ParsedNode]) -> Vec<Finding> {
+    let index = id_index(nodes);
+    let mut findings = duplicate_ids(&index);
+    findings.extend(missing_replacements(nodes, &index));
+    findings
+}
+
+// Every node file whose ID parses, valid or not, so one bad field doesn't hide a node.
+fn id_index(nodes: &[ParsedNode]) -> BTreeMap<&NodeId, Vec<&ParsedNode>> {
+    let mut index: BTreeMap<&NodeId, Vec<&ParsedNode>> = BTreeMap::new();
+    for node in nodes {
+        if let Some(id) = node.id() {
+            index.entry(id).or_default().push(node);
+        }
+    }
+    index
+}
+
+// Each file that shares an ID names another file that uses it.
+fn duplicate_ids(index: &BTreeMap<&NodeId, Vec<&ParsedNode>>) -> Vec<Finding> {
+    let shared = index.values().filter(|files| files.len() > 1);
+    shared
+        .flat_map(|files| {
+            files.iter().map(|node| {
+                let other = files.iter().find(|other| other.file != node.file);
+                let also_in = other.map(|other| other.file.clone()).unwrap_or_default();
+                finding(node, Field::Id, Problem::DuplicateId { also_in })
+            })
+        })
+        .collect()
+}
+
+fn missing_replacements(
+    nodes: &[ParsedNode],
+    index: &BTreeMap<&NodeId, Vec<&ParsedNode>>,
+) -> Vec<Finding> {
+    nodes
+        .iter()
+        .filter_map(|parsed| match &parsed.node()?.status {
+            NodeStatus::Superseded { by } if !index.contains_key(by) => {
+                let problem = Problem::ReplacementNotFound(by.clone());
+                Some(finding(parsed, Field::SupersededBy, problem))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn finding(node: &ParsedNode, field: Field, problem: Problem) -> Finding {
+    Finding {
+        file: node.file.clone(),
+        line: Some(node.line_of(field)),
+        problem,
+    }
 }
