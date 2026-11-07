@@ -29,7 +29,7 @@ The [product brief](product.md) covers the problem, users, concepts, prior art a
 
 - Replacing GitHub Issues, Projects or any work tracker.
 - Supporting work trackers other than GitHub Issues. The tool is a layer on GitHub.
-- Writing to GitHub. Agents create issues, comments and pull requests with `gh`, so the harness's permission rules see each write.
+- Writing to GitHub. Agents create issues, comments and pull requests with `gh`, and push docs changes with `git`, so the harness's permission rules see each write.
 - Tracking dates, order, priority or delivery. GitHub Projects covers them.
 - Search and history commands. `rg` and `git log --follow` cover them.
 - Managing images, diagrams, style guides or external references. They're Markdown links.
