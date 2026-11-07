@@ -23,7 +23,7 @@ statuses: [draft, approved]
 node_tokens: 2500        # from M1
 ```
 
-Only `name` is required. [`changes`](../plugin/plugin.md), which decides how the plugin's skills publish spec changes and decision records, defaults to `review`, `statuses` defaults to `[draft, approved]`, and `node_tokens`, the node size over which `check` warns, defaults to 2,500. `superseded` is always a valid status, because the tool needs to know which status requires a replacement node, so `statuses` lists only the others. Without a `github` block, the tree commands still work and the work commands are off. `check_copied_spec` turns on the [check](../checks/checks.md) for issues that copy a node's text, and is off by default.
+Only `name` is required. [`changes`](../plugin/plugin.md#publishing-changes), which decides how the plugin's skills publish spec changes and decision records, defaults to `review`, `statuses` defaults to `[draft, approved]`, and `node_tokens`, the node size over which `check` warns, defaults to 2,500. `superseded` is always a valid status, because the tool needs to know which status requires a replacement node, so `statuses` lists only the others. Without a `github` block, the tree commands still work and the work commands are off. `check_copied_spec` turns on the [check](../checks/checks.md) for issues that copy a node's text, and is off by default.
 
 ## Pointer
 
