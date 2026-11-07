@@ -27,7 +27,41 @@ A change goes through five steps, each with one command. The binary does no step
 | Verify | `/manifestdocs:verify` | Reports each requirement, scenario and accepted decision as met, not met or contradicted, plus changed behaviour no requirement covers | `manifestdocs-verify` | M1 |
 | Record | `/manifestdocs:record` | Reviews the session for decisions, drafts a record for each for the engineer to confirm, edit or drop, and opens a docs PR for the confirmed ones from a worktree | `manifestdocs-decide` | M2 |
 
-Propose grows the tree from the work, so an existing codebase needs no tree up front. Specs change in place on a docs branch, and the pull request is the review. [Node body](../tree-format/node-body/node-body.md) sets the requirement format that propose writes and verify reads. Verify only reports, and it's the check before a pull request.
+Propose grows the tree from the work, so an existing codebase needs no tree up front. Specs change in place, and the skills publish them as [Publishing changes](#publishing-changes) sets out: under the default, `changes: review`, the pull request is the review. [Node body](../tree-format/node-body/node-body.md) sets the requirement format that propose writes and verify reads. Verify only reports, and it's the check before a change is published.
+
+## Publishing changes
+
+The skills that edit a tree, such as propose and record, publish each change the way the tree's [`changes` setting](../tree-format/tree-format.md#root-marker) names, and only once the engineer confirms it. The setting chooses the path the skills take, and the docs repo's branch rules decide what's allowed, so a team that wants every change reviewed also protects its default branch. Capture is the exception: it commits its records on a docs branch and leaves publishing to a person.
+
+### Requirement: Publish by the changes setting
+A skill that publishes a tree change SHALL open a pull request under `review` and `proposed`, and SHALL push to the docs repo's default branch with no pull request under `direct`.
+
+#### Scenario: Review
+- WHEN `changes` is `review` and the agent publishes a spec change or a decision record
+- THEN the skill pushes a branch and opens a pull request with `gh` for the team to review
+
+#### Scenario: Proposed
+- WHEN `changes` is `proposed` and the agent publishes a decision record
+- THEN the skill opens a pull request that the engineer can merge without review, and the record says `proposed`
+
+#### Scenario: Direct
+- WHEN `changes` is `direct` and the agent publishes a spec change or a decision record
+- THEN the skill pushes the commit to the default branch, and opens no pull request
+
+#### Scenario: Sandboxed run
+- WHEN an unattended run records a decision, under any `changes` value
+- THEN `mfd decide` writes to `.manifestdocs/decisions/` and the skill pushes nothing
+
+### Requirement: Fall back to a pull request
+Under `direct`, a skill MUST open a pull request when it can't push to the default branch.
+
+#### Scenario: Protected branch
+- WHEN `changes` is `direct` and the docs repo's branch rules reject the push
+- THEN the skill pushes a branch, opens a pull request with `gh`, and tells the user the push was rejected
+
+#### Scenario: Default branch moved
+- WHEN `changes` is `direct` and the default branch has moved since the skill's commit
+- THEN the skill rebases onto it once and pushes again, and opens a pull request if the rebase conflicts or the push is rejected again
 
 Skills follow the open SKILL.md format so other harnesses can load them. An `AGENTS.md` snippet covers tools without skill support.
 
