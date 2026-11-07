@@ -54,7 +54,7 @@ Skip personal preferences, which belong in the agent's local memory. Skip detail
 
 **During a session.** When the engineer makes a call that passes the test, the agent drafts a record and asks the engineer to confirm, edit or drop it. On confirmation, the agent runs `mfd decide`. When a record names a decider, it's the engineer; the agent is never the decider.
 
-When a decision changes what a feature does, the agent also edits the node's requirements in the same docs PR. The spec then states the behaviour, and the record keeps the why and the rejected options. A record that supersedes another names the old choice under **Rejected**, with the reason it was dropped.
+When a decision changes what a feature does, the agent also edits the node's requirements in the same docs commit. The spec then states the behaviour, and the record keeps the why and the rejected options. A record that supersedes another names the old choice under **Rejected**, with the reason it was dropped.
 
 A decision that applies to several nodes goes on their nearest common ancestor, which `context` loads for each of them. One that applies to no node goes on the root node.
 
@@ -75,18 +75,18 @@ A decision that applies to several nodes goes on their nearest common ancestor, 
 | Setting | Interactive session | Sandboxed factory run |
 |---|---|---|
 | Where `mfd decide` writes | The node's `decisions/` folder in a git worktree of the docs repo, on a new branch from the default branch. The `manifestdocs-decide` skill creates the worktree, so the main docs clone never switches branches | `.manifestdocs/decisions/` in the code repo's working directory, because the docs mount is read-only |
-| What happens next | The skill commits, pushes and opens a PR with `gh`, then removes the worktree. With `changes: review` the team reviews the PR; with `changes: proposed` the engineer can merge it directly | The factory host moves the files into a docs branch, and a person opens the PR |
-| Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted` | The same, after the run |
+| What happens next | The skill commits, publishes by the tree's `changes` setting, as [the plugin](../plugin/plugin.md#publishing-changes) sets out, and removes the worktree. With `changes: review` it opens a PR with `gh` for the team to review; with `changes: proposed` it opens one the engineer can merge directly; with `changes: direct` it pushes to the default branch, and opens a PR only when that push fails | The factory host moves the files into a docs branch, and a person publishes them |
+| Confirmation | The team reviews the PR, or a later review flips `proposed` to `accepted`. With `changes: direct`, the push puts the record in force | The same, after the run |
 
 When the tool creates `.manifestdocs/decisions/`, it writes a `.gitignore` containing `*` inside it, so drafts never get committed to a code repo, while a [pointer](../tree-format/pointer/pointer.md) beside it can be. `--out <dir>` overrides the folder. An unattended run, or an `--out` folder outside the tree, leaves the tree's records as they are, so `decide` never writes to a read-only docs mount: when the record supersedes one in the tree, `decide` warns that the older record isn't marked, and whoever moves the new record into the docs marks it. A draft it supersedes in the same folder is marked.
 
-When the tree is in the working repo, the skill creates the worktree from that repo, and the record still gets its own PR, apart from the code.
+When the tree is in the working repo, the skill creates the worktree from that repo, and the record is still published on its own, apart from the code.
 
 The personal factory can use `changes: proposed` for speed. A team whose changes need review before they take effect uses `changes: review`.
 
 ## Read path
 
-Other sessions see a record once its PR merges and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out; `mfd decisions` lists them. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
+Other sessions see a record once it reaches the docs repo's default branch, by a merged PR or a direct push, and their docs clone fetches. `mfd context` includes accepted decisions for the node and its ancestors. It also lists proposed decisions, marked as proposed. Superseded and rejected records are left out; `mfd decisions` lists them. A rejected record still prevents the next session from proposing the same idea without a new reason. It never expires: revisiting it takes a new record that supersedes it and gives the new reason.
 
 Each decision takes one line in `context`: its ID, status and title, and the first sentence of its **Why.** paragraph. When a record supersedes another, its line ends with the older record's ID and title, as `Supersedes dc-1a7f3b4: <title>`. The tool reads these from the older file, so nothing is stored twice. Only the immediate predecessor appears, and `mfd show <dc-id>` prints a record in full with the chain it supersedes. Each node's decisions go into the budget right after the node, newest first, so trimming drops the oldest decisions of the farthest ancestors first. A record's length doesn't change its cost in context, so a node can gather many decisions without crowding out its spec.
 
