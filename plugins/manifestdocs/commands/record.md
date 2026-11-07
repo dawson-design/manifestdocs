@@ -6,4 +6,4 @@ allowed-tools: Bash(manifestdocs decide:*), Bash(manifestdocs decisions:*), Bash
 
 Review this session for decisions worth recording with the `manifestdocs-decide` skill. If `$ARGUMENTS` names a node, start with decisions about that node.
 
-For each choice that passes the skill's test, draft a record and ask the engineer to confirm, edit or drop it. Write and open a pull request only for the ones they confirm, following the skill's write path. If nothing passes the test, say there's nothing to record.
+For each choice that passes the skill's test, draft a record and ask the engineer to confirm, edit or drop it. Write and publish only the ones they confirm, following the skill's write path, which opens a pull request or pushes to the default branch by the tree's `changes` setting. If nothing passes the test, say there's nothing to record.

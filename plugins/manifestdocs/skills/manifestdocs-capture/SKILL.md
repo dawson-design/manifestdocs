@@ -31,7 +31,7 @@ When the decision changes what a feature does, also draft the spec change with t
 ## Write
 
 1. Follow steps 1 to 4 of "Write it: interactive session" in the `manifestdocs-decide` skill: create a docs worktree on a new branch, pass each confirmed record to `manifestdocs decide --file -`, make any spec change in the worktree's copy of the node, and commit.
-2. Stop there. Don't push or open the pull request, which a person does. Give the user the worktree path, its branch and the paths `decide` printed, and tell them to remove the worktree with `git worktree remove` once the pull request is open.
+2. Stop there. Don't publish the commit, which a person does. Give the user the worktree path, its branch and the paths `decide` printed, and say how the tree's `changes` setting publishes it: a pull request under `review` or `proposed`, or a push to the default branch under `direct` (`manifestdocs tree --json --depth 0` prints it as `data.changes`). Tell them to remove the worktree with `git worktree remove` once it's published.
 
 In a sandboxed run, use "Write it: sandboxed run" in the `manifestdocs-decide` skill instead.
 

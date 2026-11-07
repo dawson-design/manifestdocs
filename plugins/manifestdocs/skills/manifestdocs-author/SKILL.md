@@ -52,7 +52,7 @@ When the user wants to change what a feature does, change the spec before the co
 
 1. Run `manifestdocs tree` and find the nodes the change touches. Say which ones you picked.
 2. Add, change or remove requirements and scenarios in those nodes. Behaviour that no node covers gets a new node (see "Add a node").
-3. Run `manifestdocs check`, then show the user the changed requirements for review. Commit or open a pull request only when the user asks.
+3. Run `manifestdocs check`, then show the user the changed requirements for review. Publish the change only when the user asks: commit the tree files you changed on a new branch, such as `spec/<slug>`, and follow "Publish" in the `manifestdocs-decide` skill, which opens a pull request or pushes to the default branch by the tree's `changes` setting.
 
 ## Draft a node from existing code
 
